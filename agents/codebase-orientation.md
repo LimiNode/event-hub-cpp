@@ -217,8 +217,10 @@ explicitly changes the library's threading contract.
 - `subscribe_queued<T>()` receives only queued `process()` delivery.
 - `emit_direct<T>()` returns `DispatchResult` with matched, delivered, and
   policy-skipped subscription counts.
-- `set_delivery_mismatch_handler(...)` reports dispatches that skipped
-  subscribers because their `DeliveryPolicy` rejected the source.
+- `set_delivery_mismatch_handler(...)` reports policy mismatches. The default
+  `DeliveryMismatchReportMode::no_delivery` reports only when all subscribers
+  were policy-skipped; `any_skipped` is available for verbose mixed-policy
+  diagnostics.
 - Prefer queued subscriptions for module state with hub-thread or run-loop
   affinity. Use direct subscriptions only when callbacks are thread-safe and
   reentrancy-safe.
@@ -232,7 +234,9 @@ explicitly changes the library's threading contract.
 - `EventEndpoint` subscriptions carry a lifetime guard; callbacks copied by an
   active dispatch are skipped when the guard has expired before callback start.
 - Awaiters use queued delivery by default. `AwaitOptions::delivery` filters
-  event callbacks, timeout callbacks, and cancellation cleanup. Set it to
+  event callbacks, timeout callbacks, and cancellation cleanup. Queued awaiters
+  observe timeout and cancellation only at queued poll points; call `cancel()`
+  directly for immediate cross-thread cancellation. Set delivery to
   `DeliveryPolicy::direct` or `DeliveryPolicy::any` only when those paths may
   safely run from an `emit_direct<T>()` caller thread.
 - `unsubscribe_all()` does not wait for callbacks that already started or

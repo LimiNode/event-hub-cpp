@@ -58,8 +58,14 @@ struct DispatchResult {
 /// \brief Diagnostic payload for delivery-policy mismatches.
 struct DeliveryMismatch {
     std::type_index event_type{typeid(void)}; ///< Event type being dispatched.
-    DeliveryPolicy publisher_policy = DeliveryPolicy::any; ///< Dispatch source policy.
+    DeliveryPolicy dispatch_policy = DeliveryPolicy::any; ///< Dispatch source policy.
     std::size_t skipped_subscribers = 0; ///< Subscribers skipped by DeliveryPolicy.
+};
+
+/// \brief Controls when delivery-policy mismatches are reported.
+enum class DeliveryMismatchReportMode : std::uint8_t {
+    no_delivery, ///< Report only when policy filtering prevents all delivery.
+    any_skipped ///< Report whenever at least one subscriber is policy-skipped.
 };
 
 /// \class EventBus
@@ -122,14 +128,20 @@ public:
     /// \brief Set a handler for delivery-policy mismatches.
     /// \param handler Handler to install. Passing an empty handler disables
     /// mismatch diagnostics.
+    /// \param mode Controls which policy skips are reported.
     ///
-    /// The handler is called after dispatch when subscribers for the event type
-    /// exist but some were skipped because their DeliveryPolicy rejects the
-    /// dispatch source. Handler exceptions are reported to the bus exception
-    /// handler when one is configured; otherwise they are ignored.
-    void set_delivery_mismatch_handler(DeliveryMismatchHandler handler) {
+    /// By default the handler is called only when subscribers for the event
+    /// type exist but no callback was delivered because DeliveryPolicy filtered
+    /// them out. Use DeliveryMismatchReportMode::any_skipped for verbose
+    /// diagnostics on mixed direct/queued subscriptions. Handler exceptions are
+    /// reported to the bus exception handler when one is configured; otherwise
+    /// they are ignored.
+    void set_delivery_mismatch_handler(
+        DeliveryMismatchHandler handler,
+        DeliveryMismatchReportMode mode = DeliveryMismatchReportMode::no_delivery) {
         std::lock_guard<std::mutex> lock(m_delivery_mismatch_handler_mutex);
         m_delivery_mismatch_handler = std::move(handler);
+        m_delivery_mismatch_report_mode = mode;
     }
 
     /// \brief Return a bus-wide request id for request-response event pairs.
@@ -584,6 +596,11 @@ private:
         std::shared_ptr<const void> payload;
     };
 
+    struct DeliveryMismatchHandlerSnapshot {
+        DeliveryMismatchHandler handler;
+        DeliveryMismatchReportMode mode = DeliveryMismatchReportMode::no_delivery;
+    };
+
     template <typename EventType>
     void enqueue(std::shared_ptr<EventType> event) {
         std::shared_ptr<const void> payload = std::move(event);
@@ -646,18 +663,24 @@ private:
 
     void report_delivery_mismatch(std::type_index type,
                                   DispatchSource source,
-                                  std::size_t skipped) const noexcept {
-        if (skipped == 0U) {
+                                  const DispatchResult& result) const noexcept {
+        if (result.skipped == 0U) {
             return;
         }
 
-        auto handler = delivery_mismatch_handler();
-        if (!handler) {
+        auto snapshot = delivery_mismatch_handler_snapshot();
+        if (!snapshot.handler) {
+            return;
+        }
+
+        if (snapshot.mode == DeliveryMismatchReportMode::no_delivery &&
+            result.delivered != 0U) {
             return;
         }
 
         try {
-            handler(DeliveryMismatch{type, source_policy(source), skipped});
+            snapshot.handler(
+                DeliveryMismatch{type, source_policy(source), result.skipped});
         } catch (...) {
             report_exception_noexcept(std::current_exception());
         }
@@ -704,7 +727,7 @@ private:
             }
         }
 
-        report_delivery_mismatch(type, source, result.skipped);
+        report_delivery_mismatch(type, source, result);
         return result;
     }
 
@@ -717,9 +740,10 @@ private:
         return m_exception_handler;
     }
 
-    DeliveryMismatchHandler delivery_mismatch_handler() const {
+    DeliveryMismatchHandlerSnapshot delivery_mismatch_handler_snapshot() const {
         std::lock_guard<std::mutex> lock(m_delivery_mismatch_handler_mutex);
-        return m_delivery_mismatch_handler;
+        return DeliveryMismatchHandlerSnapshot{m_delivery_mismatch_handler,
+                                               m_delivery_mismatch_report_mode};
     }
 
     bool report_exception(std::exception_ptr exception) const {
@@ -782,6 +806,8 @@ private:
 
     mutable std::mutex m_delivery_mismatch_handler_mutex;
     DeliveryMismatchHandler m_delivery_mismatch_handler;
+    DeliveryMismatchReportMode m_delivery_mismatch_report_mode =
+        DeliveryMismatchReportMode::no_delivery;
 
     std::atomic<SubscriptionId> m_next_subscription_id{1};
     RequestIdGenerator m_request_ids;

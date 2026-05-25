@@ -62,24 +62,84 @@ int main() {
         EVENT_HUB_TEST_CHECK(direct_total == 2);
         EVENT_HUB_TEST_CHECK(queued_total == 0);
         EVENT_HUB_TEST_CHECK(any_total == 2);
-        EVENT_HUB_TEST_CHECK(mismatches.size() == 1);
-        EVENT_HUB_TEST_CHECK(mismatches[0].event_type ==
-                             std::type_index(typeid(Ping)));
-        EVENT_HUB_TEST_CHECK(mismatches[0].publisher_policy ==
-                             event_hub::DeliveryPolicy::direct);
-        EVENT_HUB_TEST_CHECK(mismatches[0].skipped_subscribers == 1);
+        EVENT_HUB_TEST_CHECK(mismatches.empty());
 
         endpoint.post<Ping>(3);
         EVENT_HUB_TEST_CHECK(bus.process() == 1);
         EVENT_HUB_TEST_CHECK(direct_total == 2);
         EVENT_HUB_TEST_CHECK(queued_total == 3);
         EVENT_HUB_TEST_CHECK(any_total == 5);
+        EVENT_HUB_TEST_CHECK(mismatches.empty());
+    }
+
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        std::vector<event_hub::DeliveryMismatch> mismatches;
+
+        bus.set_delivery_mismatch_handler(
+            [&mismatches](const event_hub::DeliveryMismatch& mismatch) {
+                mismatches.push_back(mismatch);
+            });
+
+        endpoint.subscribe_queued<Ping>([](const Ping&) {
+            EVENT_HUB_TEST_CHECK(false && "queued subscriber must be skipped");
+        });
+
+        const auto direct_result = endpoint.emit_direct<Ping>(1);
+        EVENT_HUB_TEST_CHECK(direct_result.matched == 1);
+        EVENT_HUB_TEST_CHECK(direct_result.delivered == 0);
+        EVENT_HUB_TEST_CHECK(direct_result.skipped == 1);
+        EVENT_HUB_TEST_CHECK(mismatches.size() == 1);
+        EVENT_HUB_TEST_CHECK(mismatches[0].event_type ==
+                             std::type_index(typeid(Ping)));
+        EVENT_HUB_TEST_CHECK(mismatches[0].dispatch_policy ==
+                             event_hub::DeliveryPolicy::direct);
+        EVENT_HUB_TEST_CHECK(mismatches[0].skipped_subscribers == 1);
+
+        endpoint.unsubscribe_all();
+        endpoint.subscribe_direct<Ping>([](const Ping&) {
+            EVENT_HUB_TEST_CHECK(false && "direct subscriber must be skipped");
+        });
+
+        endpoint.post<Ping>(2);
+        EVENT_HUB_TEST_CHECK(bus.process() == 1);
         EVENT_HUB_TEST_CHECK(mismatches.size() == 2);
         EVENT_HUB_TEST_CHECK(mismatches[1].event_type ==
                              std::type_index(typeid(Ping)));
-        EVENT_HUB_TEST_CHECK(mismatches[1].publisher_policy ==
+        EVENT_HUB_TEST_CHECK(mismatches[1].dispatch_policy ==
                              event_hub::DeliveryPolicy::queued);
         EVENT_HUB_TEST_CHECK(mismatches[1].skipped_subscribers == 1);
+    }
+
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        int direct_total = 0;
+        std::vector<event_hub::DeliveryMismatch> mismatches;
+
+        bus.set_delivery_mismatch_handler(
+            [&mismatches](const event_hub::DeliveryMismatch& mismatch) {
+                mismatches.push_back(mismatch);
+            },
+            event_hub::DeliveryMismatchReportMode::any_skipped);
+
+        endpoint.subscribe_direct<Ping>([&direct_total](const Ping& ping) {
+            direct_total += ping.value;
+        });
+        endpoint.subscribe_queued<Ping>([](const Ping&) {
+            EVENT_HUB_TEST_CHECK(false && "queued subscriber must be skipped");
+        });
+
+        const auto direct_result = endpoint.emit_direct<Ping>(4);
+        EVENT_HUB_TEST_CHECK(direct_result.matched == 2);
+        EVENT_HUB_TEST_CHECK(direct_result.delivered == 1);
+        EVENT_HUB_TEST_CHECK(direct_result.skipped == 1);
+        EVENT_HUB_TEST_CHECK(direct_total == 4);
+        EVENT_HUB_TEST_CHECK(mismatches.size() == 1);
+        EVENT_HUB_TEST_CHECK(mismatches[0].dispatch_policy ==
+                             event_hub::DeliveryPolicy::direct);
+        EVENT_HUB_TEST_CHECK(mismatches[0].skipped_subscribers == 1);
     }
 
     {

@@ -6,7 +6,8 @@ All notable changes to this project will be documented in this file.
 - Changed the direct event dispatch API from `emit<T>()` to
   `emit_direct<T>()`; the old name is intentionally not kept as an alias.
 - Added `DispatchResult` return statistics for direct dispatch and an optional
-  delivery mismatch handler for policy-skipped subscribers.
+  delivery mismatch handler for policy-skipped subscribers. The handler defaults
+  to no-delivery-only reporting and can opt into any-skipped diagnostics.
 - Added `Module` and `ModuleHub` for composing applications from modules that
   share one `EventBus` while each module owns its own `TaskManager`.
 - Added module execution modes for inline hub processing, private module

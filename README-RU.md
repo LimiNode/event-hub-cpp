@@ -89,6 +89,13 @@ int main() {
 }
 ```
 
+Матрица доставки:
+
+| Источник dispatch | direct subscriber | queued subscriber | any subscriber |
+| --- | --- | --- | --- |
+| `emit_direct()` | вызывается сразу | пропускается | вызывается сразу |
+| `post()` + `process()` | пропускается | вызывается из `process()` | вызывается из `process()` |
+
 События могут быть обычными C++ value type-ами. Наследуйтесь от
 `event_hub::Event` только если нужны runtime metadata или клонирование:
 
@@ -136,6 +143,10 @@ stream->cancel();
 ```
 
 Timeout-ы и внешняя отмена проверяются в точках `emit_direct<T>()` и `process()` с учетом `AwaitOptions::delivery`. По умолчанию awaiter-ы принимают queued delivery, поэтому event callback, timeout callback и cleanup отмены выполняются только из `process()`, если delivery явно не изменен.
+
+Queued awaiter видит timeout и cancellation только в queued poll points.
+Вызывайте `cancel()` напрямую, если отмена должна быть немедленной из любого
+потока.
 
 ## TaskManager
 
@@ -451,7 +462,9 @@ CI также проверяет подключение установленно
 `emit_direct<T>()` возвращает `DispatchResult` с числом подписок данного типа,
 реально вызванных callback-ов и подписчиков, пропущенных из-за delivery policy.
 `set_delivery_mismatch_handler(...)` задает необязательный диагностический hook
-для случаев, когда источник dispatch пропустил подписчиков из-за несовпадения
+По умолчанию он сообщает только когда подписчики такого типа есть, но никто не
+получил событие из-за policy filtering; используйте
+`DeliveryMismatchReportMode::any_skipped` для подробной диагностики смешанных
 policy.
 
 `EventBus` и `TaskManager` не владеют потоком и не решают, сколько спать. Если

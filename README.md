@@ -119,6 +119,13 @@ int main() {
 }
 ```
 
+Dispatch follows this matrix:
+
+| Dispatch source | direct subscriber | queued subscriber | any subscriber |
+| --- | --- | --- | --- |
+| `emit_direct()` | called now | skipped | called now |
+| `post()` + `process()` | skipped | called by `process()` | called by `process()` |
+
 Events can be plain C++ value types. Derive from `event_hub::Event` only when
 you need runtime metadata or cloning:
 
@@ -211,6 +218,9 @@ cancellation cleanup run only from `process()` unless delivery is changed. Set
 `options.set_delivery(event_hub::DeliveryPolicy::direct)` or
 `DeliveryPolicy::any` only when an awaiter is intentionally allowed to complete
 from an `emit_direct<T>()` caller thread.
+
+A queued awaiter observes timeout and cancellation only at queued poll points.
+Call `cancel()` directly when cancellation must be immediate from any thread.
 
 ## TaskManager
 
@@ -532,8 +542,9 @@ reentrancy-safe.
 `emit_direct<T>()` returns `DispatchResult` with the number of subscriptions
 matched for the event type, callbacks delivered, and subscribers skipped by
 delivery policy. `set_delivery_mismatch_handler(...)` installs an optional
-diagnostic hook for cases where a dispatch source skipped subscribers because
-their policy rejected it.
+diagnostic hook. By default it reports only when subscribers for the event type
+exist but none are delivered because policy filtering skipped them all; pass
+`DeliveryMismatchReportMode::any_skipped` for verbose mixed-policy diagnostics.
 
 `EventBus` and `TaskManager` do not own a thread and do not decide how long to
 sleep. When a non-owning `INotifier` is set, each successful `post()` calls

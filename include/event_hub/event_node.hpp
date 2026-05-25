@@ -264,17 +264,6 @@ protected:
         return m_endpoint.emit_direct<EventType>(event);
     }
 
-    /// \brief Dispatch an already constructed event synchronously.
-    /// \tparam EventType Concrete event type.
-    /// \param event Event object to dispatch.
-    /// \return Dispatch statistics for this event.
-    /// \throws Any callback exception when no exception handler is configured
-    /// on the bus.
-    template <typename EventType>
-    DispatchResult emit_direct(EventType&& event) {
-        return m_endpoint.emit_direct<EventType>(std::move(event));
-    }
-
     /// \brief Construct and dispatch an event synchronously.
     /// \tparam EventType Concrete event type.
     /// \tparam Args Constructor argument types.
