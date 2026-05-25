@@ -38,11 +38,8 @@ namespace event_hub {
 /// initialize(), run(), or start().
 class ModuleHub {
 public:
-    /// \brief Monotonic time point used for deadline aggregation.
-    using TimePoint = TaskManager::TimePoint;
-
-    /// \brief Owned module pointer type.
-    using ModulePtr = std::unique_ptr<Module>;
+    using TimePoint = TaskManager::TimePoint; ///< Monotonic time point used for deadline aggregation.
+    using ModulePtr = std::unique_ptr<Module>; ///< Owned module pointer type.
 
     /// \brief Construct an empty hub.
     ModuleHub() = default;

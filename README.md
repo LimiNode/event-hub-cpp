@@ -27,6 +27,8 @@ Key characteristics:
 - `EventNode` offers a protected endpoint-like API for listener-style modules.
 - `emit<T>()` dispatches synchronously.
 - `post<T>()` queues work for an explicit `process()` point.
+- `subscribe<T>(DeliveryPolicy, ...)` makes callback thread affinity explicit;
+  `subscribe_any<T>()` keeps the compatibility "both" behavior.
 - Optional `TaskManager` queues immediate, delayed, periodic, and
   future-returning tasks for the same explicit processing model.
 - Optional `CalendarScheduler` adds daily, weekly, monthly, and custom
@@ -101,14 +103,19 @@ int main() {
     event_hub::EventBus bus;
     event_hub::EventEndpoint endpoint(bus);
 
-    endpoint.subscribe<MyEvent>([](const MyEvent& event) {
-        std::cout << event.message << '\n';
-    });
-
-    endpoint.emit<MyEvent>("sent immediately");
+    endpoint.subscribe<MyEvent>(
+        event_hub::DeliveryPolicy::queued,
+        [](const MyEvent& event) {
+            std::cout << event.message << '\n';
+        });
 
     endpoint.post<MyEvent>("sent from the queue");
     bus.process();
+
+    endpoint.subscribe_direct<MyEvent>([](const MyEvent& event) {
+        std::cout << event.message << '\n';
+    });
+    endpoint.emit<MyEvent>("sent immediately");
 }
 ```
 
@@ -143,7 +150,7 @@ public:
         : EventNode(bus) {}
 
     void start() {
-        listen<ReloadRequested>();
+        listen_queued<ReloadRequested>();
     }
 
     void request_reload() {
@@ -158,10 +165,15 @@ public:
 };
 ```
 
-Use `listen<T>()` for `event_hub::Event`-derived events handled through
-`on_event(const Event&)`. For plain value events, use `subscribe<T>(callback)`.
-Modules owned by `std::shared_ptr` can pass `weak_from_this()` to
-`subscribe<T>(guard, callback)` when callbacks capture module state.
+Use `listen<T>(DeliveryPolicy)` for `event_hub::Event`-derived events handled
+through `on_event(const Event&)`. For plain value events, use
+`subscribe<T>(DeliveryPolicy, callback)`. For module-to-module traffic that
+must run only from the hub or run-loop processing thread, prefer
+`listen_queued<T>()` or `subscribe_queued<T>(callback)`. Use `listen_any<T>()`
+or `subscribe_any<T>()` only when a callback is intentionally safe for both
+delivery sources. Modules owned by `std::shared_ptr` can pass
+`weak_from_this()` to `subscribe<T>(DeliveryPolicy, guard, callback)` when
+callbacks capture module state.
 
 ## Awaiters
 
@@ -193,6 +205,10 @@ stream->cancel();
 ```
 
 Timeouts and external cancellation are polled by `emit<T>()` and `process()`.
+Awaiters use queued delivery by default. Set
+`options.set_delivery(event_hub::DeliveryPolicy::direct)` or
+`DeliveryPolicy::any` when an awaiter is intentionally allowed to complete from
+an `emit<T>()` caller thread.
 
 ## TaskManager
 
@@ -498,8 +514,18 @@ the vcpkg overlay port on Linux.
 ## Dispatch And Threading
 
 `post<T>()` is safe to call from producer threads. `emit<T>()` and `process()`
-invoke callbacks on the calling thread. The bus copies the callback list before
-dispatch so handlers may subscribe or unsubscribe while handling an event.
+invoke matching callbacks on the calling thread. The bus copies the callback
+list before dispatch so handlers may subscribe or unsubscribe while handling an
+event.
+
+Subscription delivery policy controls which source can invoke a callback.
+`subscribe<T>(DeliveryPolicy::direct, ...)` and `subscribe_direct<T>(...)`
+accept only immediate `emit<T>()` delivery. `subscribe<T>(DeliveryPolicy::queued,
+...)` and `subscribe_queued<T>(...)` accept only queued `process()` delivery.
+`subscribe_any<T>(...)` keeps the compatibility `DeliveryPolicy::any` behavior.
+Use queued subscriptions for module state that assumes hub-thread or run-loop
+affinity; use direct subscriptions only for callbacks that are thread-safe and
+reentrancy-safe.
 
 `EventBus` and `TaskManager` do not own a thread and do not decide how long to
 sleep. When a non-owning `INotifier` is set, each successful `post()` calls
@@ -563,7 +589,7 @@ public:
     void start() {
         auto weak = weak_from_this();
 
-        m_endpoint.subscribe<TokenFoundEvent>(
+        m_endpoint.subscribe_queued<TokenFoundEvent>(
             weak,
             [weak](const TokenFoundEvent& event) {
                 auto self = weak.lock();

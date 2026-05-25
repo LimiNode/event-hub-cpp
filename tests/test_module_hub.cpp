@@ -273,7 +273,7 @@ int main() {
         std::vector<std::string> messages;
 
         auto& module = hub.emplace_module<PostingModule>();
-        endpoint.subscribe<Message>([&messages](const Message& message) {
+        endpoint.subscribe_queued<Message>([&messages](const Message& message) {
             messages.push_back(message.text);
         });
 
@@ -396,7 +396,7 @@ int main() {
         std::vector<std::string> messages;
         auto& producer = hub.emplace_module<PrivateProducerModule>();
 
-        endpoint.subscribe<Message>([&messages](const Message& message) {
+        endpoint.subscribe_queued<Message>([&messages](const Message& message) {
             messages.push_back(message.text);
         });
 

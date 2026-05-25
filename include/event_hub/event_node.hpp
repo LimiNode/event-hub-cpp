@@ -32,11 +32,13 @@ namespace event_hub {
 /// `on_event(const Event&)` method and `Event::as<T>()` dispatch.
 ///
 /// For plain C++ events that do not derive from `event_hub::Event`, prefer
-/// `subscribe<T>(callback)` or use EventEndpoint directly.
+/// `subscribe<T>(delivery, callback)` or use EventEndpoint directly.
+/// Use `subscribe_queued<T>(callback)` or `listen_queued<T>()` when module
+/// state must only be touched from process() or run-loop delivery.
 ///
 /// Modules owned by `std::shared_ptr` can pass an external `std::weak_ptr`
-/// guard to `subscribe<T>(guard, callback)` when callbacks capture module
-/// state and need strict lifetime control.
+/// guard to `subscribe<T>(delivery, guard, callback)` when callbacks capture
+/// module state and need strict lifetime control.
 ///
 /// \note EventBus must outlive EventNode.
 /// \note Destroying EventNode closes the internal EventEndpoint.
@@ -44,8 +46,7 @@ namespace event_hub {
 /// callbacks that have already started.
 class EventNode : public EventListener {
 public:
-    /// \brief Subscription id type returned by EventBus.
-    using SubscriptionId = EventBus::SubscriptionId;
+    using SubscriptionId = EventBus::SubscriptionId; ///< Subscription id type returned by EventBus.
 
     /// \brief Construct a node connected to a bus.
     /// \param bus Event bus that must outlive this node.
@@ -96,27 +97,87 @@ protected:
     /// \return Subscription id that can be used for targeted unsubscription.
     ///
     /// Use listen() for Event-derived types handled by on_event(). Plain value
-    /// events should use subscribe<T>(callback) instead.
+    /// events should use subscribe<T>(delivery, callback) instead.
     template <typename EventType>
-    SubscriptionId listen() {
+    SubscriptionId listen(DeliveryPolicy delivery) {
         static_assert(std::is_base_of<Event, EventType>::value,
                       "EventType must derive from event_hub::Event");
 
-        return m_endpoint.subscribe<EventType>(*this);
+        return m_endpoint.subscribe<EventType>(delivery, *this);
     }
 
-    /// \brief Subscribe with a callback owned by this node.
+    /// \brief Subscribe this node as EventListener to both delivery sources.
+    /// \tparam EventType Event type derived from event_hub::Event.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType>
+    SubscriptionId listen_any() {
+        static_assert(std::is_base_of<Event, EventType>::value,
+                      "EventType must derive from event_hub::Event");
+
+        return m_endpoint.subscribe_any<EventType>(*this);
+    }
+
+    /// \brief Subscribe this node as EventListener to direct emit() delivery.
+    /// \tparam EventType Event type derived from event_hub::Event.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType>
+    SubscriptionId listen_direct() {
+        static_assert(std::is_base_of<Event, EventType>::value,
+                      "EventType must derive from event_hub::Event");
+
+        return m_endpoint.subscribe_direct<EventType>(*this);
+    }
+
+    /// \brief Subscribe this node as EventListener to queued process() delivery.
+    /// \tparam EventType Event type derived from event_hub::Event.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType>
+    SubscriptionId listen_queued() {
+        static_assert(std::is_base_of<Event, EventType>::value,
+                      "EventType must derive from event_hub::Event");
+
+        return m_endpoint.subscribe_queued<EventType>(*this);
+    }
+
+    /// \brief Subscribe with a callback owned by this node to both sources.
     /// \tparam EventType Concrete event type.
     /// \tparam Callback Callback type invocable with `const EventType&`.
     /// \param callback Callback invoked when EventType is dispatched.
     /// \return Subscription id that can be used for targeted unsubscription.
     template <typename EventType, typename Callback>
-    SubscriptionId subscribe(Callback&& callback) {
-        return m_endpoint.subscribe<EventType>(
+    SubscriptionId subscribe_any(Callback&& callback) {
+        return m_endpoint.subscribe_any<EventType>(
             std::forward<Callback>(callback));
     }
 
-    /// \brief Subscribe with a callback and an external lifetime guard.
+    /// \brief Subscribe with an explicit delivery policy.
+    /// \tparam EventType Concrete event type.
+    /// \tparam Callback Callback type invocable with `const EventType&`.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param callback Callback invoked when EventType is dispatched.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType, typename Callback>
+    SubscriptionId subscribe(DeliveryPolicy delivery, Callback&& callback) {
+        return m_endpoint.subscribe<EventType>(
+            delivery,
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe to direct emit() delivery only.
+    template <typename EventType, typename Callback>
+    SubscriptionId subscribe_direct(Callback&& callback) {
+        return m_endpoint.subscribe_direct<EventType>(
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe to queued process() delivery only.
+    template <typename EventType, typename Callback>
+    SubscriptionId subscribe_queued(Callback&& callback) {
+        return m_endpoint.subscribe_queued<EventType>(
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe to both delivery sources with an external guard.
     /// \tparam EventType Concrete event type.
     /// \tparam Guard Type stored by the external weak guard.
     /// \tparam Callback Callback type invocable with `const EventType&`.
@@ -127,14 +188,52 @@ protected:
     /// The internal endpoint guard still applies, so both the node endpoint
     /// and the external guard must be alive before user code runs.
     template <typename EventType, typename Guard, typename Callback>
-    SubscriptionId subscribe(std::weak_ptr<Guard> guard, Callback&& callback) {
+    SubscriptionId subscribe_any(std::weak_ptr<Guard> guard,
+                                 Callback&& callback) {
+        return m_endpoint.subscribe_any<EventType>(
+            std::move(guard),
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe with a delivery policy and external lifetime guard.
+    /// \tparam EventType Concrete event type.
+    /// \tparam Guard Type stored by the external weak guard.
+    /// \tparam Callback Callback type invocable with `const EventType&`.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param guard Weak guard that must lock before callback invocation.
+    /// \param callback Callback invoked when EventType is dispatched.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType, typename Guard, typename Callback>
+    SubscriptionId subscribe(DeliveryPolicy delivery,
+                             std::weak_ptr<Guard> guard,
+                             Callback&& callback) {
         return m_endpoint.subscribe<EventType>(
+            delivery,
+            std::move(guard),
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe to direct emit() delivery with a lifetime guard.
+    template <typename EventType, typename Guard, typename Callback>
+    SubscriptionId subscribe_direct(std::weak_ptr<Guard> guard,
+                                    Callback&& callback) {
+        return m_endpoint.subscribe_direct<EventType>(
+            std::move(guard),
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe to queued process() delivery with a lifetime guard.
+    template <typename EventType, typename Guard, typename Callback>
+    SubscriptionId subscribe_queued(std::weak_ptr<Guard> guard,
+                                    Callback&& callback) {
+        return m_endpoint.subscribe_queued<EventType>(
             std::move(guard),
             std::forward<Callback>(callback));
     }
 
     /// \brief Remove one subscription by id.
-    /// \param id Subscription id returned by subscribe() or listen().
+    /// \param id Subscription id returned by subscribe(), subscribe_any(),
+    /// listen(), or listen_any().
     void unsubscribe(SubscriptionId id) {
         m_endpoint.unsubscribe(id);
     }

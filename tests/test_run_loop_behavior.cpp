@@ -17,7 +17,7 @@ int main() {
 
         EVENT_HUB_TEST_CHECK(loop.max_tasks_per_manager() == 1);
 
-        endpoint.subscribe<Message>([&messages](const Message& message) {
+        endpoint.subscribe_queued<Message>([&messages](const Message& message) {
             messages.push_back(message.text);
         });
 
@@ -76,7 +76,7 @@ int main() {
         event_hub::RunLoop loop;
         std::vector<std::string> messages;
 
-        endpoint.subscribe<Message>([&messages, &loop](const Message& message) {
+        endpoint.subscribe_queued<Message>([&messages, &loop](const Message& message) {
             messages.push_back(message.text);
             if (message.text == "second") {
                 loop.request_stop();

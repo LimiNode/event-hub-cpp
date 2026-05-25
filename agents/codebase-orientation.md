@@ -29,6 +29,8 @@ Core vocabulary:
 - `Event` - optional base class for users who need runtime metadata or cloning.
 - `EventListener` - optional generic listener interface for `Event`-derived
   event types.
+- `DeliveryPolicy` - subscription contract for direct `emit()`, queued
+  `process()`, or compatibility "any" delivery.
 - `EventAwaiter` - cancelable helper used by `await_once()` and `await_each()`.
 - `CancellationToken` and `CancellationSource` - basic cancellation primitives
   for awaiters.
@@ -64,9 +66,11 @@ struct UserLoggedIn {
 event_hub::EventBus bus;
 event_hub::EventEndpoint endpoint(bus);
 
-endpoint.subscribe<UserLoggedIn>([](const UserLoggedIn& event) {
-    // handle event
-});
+endpoint.subscribe<UserLoggedIn>(
+    event_hub::DeliveryPolicy::queued,
+    [](const UserLoggedIn& event) {
+        // handle event
+    });
 
 endpoint.post<UserLoggedIn>("alice");
 bus.process();
@@ -95,17 +99,21 @@ Use it when a module naturally wants to inherit from a base class, receive
 its subscriptions by RAII. For plain value events, prefer
 `EventEndpoint` directly unless a module already benefits from the `EventNode`
 base; inside an `EventNode`, plain value events should use
-`subscribe<T>(callback)` rather than `listen<T>()`.
+`subscribe<T>(DeliveryPolicy, callback)` rather than `listen<T>(...)`. For
+module-to-module traffic that must stay on the hub or run-loop thread, prefer
+`subscribe_queued<T>(callback)` or `listen_queued<T>()`.
 
 Important design points:
 
 - `EventNode` inherits from `EventListener` so derived modules can call
-  `listen<EventType>()` and dispatch inside `on_event()` with `Event::as<T>()`
-  or `Event::as_ref<T>()`.
+  `listen<EventType>(DeliveryPolicy::queued)` or a named helper such as
+  `listen_queued<EventType>()` and dispatch inside `on_event()` with
+  `Event::as<T>()` or `Event::as_ref<T>()`.
 - `EventNode` owns an internal `EventEndpoint`; all subscription, `post`,
   `emit`, and unsubscribe behavior must delegate to that endpoint.
-- `listen<T>()` is only for types derived from `event_hub::Event`. Keep the
-  static assertion so misuse fails at compile time with a clear message.
+- `listen<T>(DeliveryPolicy)` is only for types derived from
+  `event_hub::Event`. Keep the static assertion so misuse fails at compile time
+  with a clear message.
 - The event API on `EventNode` is protected on purpose. External code should
   use the module's business methods, not treat the module object as a public
   event bus facade.
@@ -118,8 +126,9 @@ Important design points:
   from starting after close/destruction, but does not wait for callbacks that
   have already started.
 - Modules managed by `std::shared_ptr` may still need an explicit
-  `weak_from_this()` guard with `subscribe<T>(guard, callback)` when callbacks
-  capture module state and strict lifetime is required.
+  `weak_from_this()` guard with
+  `subscribe<T>(DeliveryPolicy, guard, callback)` when callbacks capture module
+  state and strict lifetime is required.
 - Do not add task systems, thread pools, coroutine drain models,
   `close_and_wait()`, or bus architecture changes to support `EventNode`.
 
@@ -164,9 +173,10 @@ to remove records from the bus storage.
 
 There are two guard layers by design:
 
-- Endpoint guard: `endpoint.subscribe<T>(callback)` protects callbacks from
-  starting after the endpoint is closed or destroyed.
-- User guard: `endpoint.subscribe<T>(weak_from_this(), callback)` adds a
+- Endpoint guard: `endpoint.subscribe<T>(DeliveryPolicy, callback)` protects
+  callbacks from starting after the endpoint is closed or destroyed.
+- User guard:
+  `endpoint.subscribe<T>(DeliveryPolicy, weak_from_this(), callback)` adds a
   module/object lifetime guard for `std::shared_ptr`-managed modules.
 
 The user guard overload is intentionally implemented as an additional check
@@ -179,7 +189,7 @@ locking it inside the callback before touching module state:
 ```cpp
 auto weak = weak_from_this();
 
-m_endpoint.subscribe<TokenFoundEvent>(
+m_endpoint.subscribe_queued<TokenFoundEvent>(
     weak,
     [weak](const TokenFoundEvent& event) {
         if (auto self = weak.lock()) {
@@ -201,6 +211,13 @@ explicitly changes the library's threading contract.
 
 - `emit<T>()` dispatches synchronously on the calling thread.
 - `post<T>()` enqueues an event for later dispatch.
+- `subscribe<T>()` requires an explicit `DeliveryPolicy`.
+- `subscribe_any<T>()` uses `DeliveryPolicy::any` for backward compatibility.
+- `subscribe_direct<T>()` receives only `emit<T>()` delivery.
+- `subscribe_queued<T>()` receives only queued `process()` delivery.
+- Prefer queued subscriptions for module state with hub-thread or run-loop
+  affinity. Use direct subscriptions only when callbacks are thread-safe and
+  reentrancy-safe.
 - If an `INotifier` is configured, `post<T>()` calls `notify()` after the event
   is queued.
 - `process()` drains the queue snapshot taken at the start of the call.
@@ -210,6 +227,9 @@ explicitly changes the library's threading contract.
 - `EventEndpoint` unsubscribes and cancels its awaiters on destruction.
 - `EventEndpoint` subscriptions carry a lifetime guard; callbacks copied by an
   active dispatch are skipped when the guard has expired before callback start.
+- Awaiters use queued delivery by default. Set `AwaitOptions::delivery` to
+  `DeliveryPolicy::direct` or `DeliveryPolicy::any` only when the awaiter
+  callback may safely run from an `emit<T>()` caller thread.
 - `unsubscribe_all()` does not wait for callbacks that already started or
   already passed the guard check.
 - Modules that need strict object lifetime during callbacks should be owned by
@@ -297,7 +317,7 @@ editing public APIs, examples, or tests.
 
 Subscription storage and the async queue are protected by mutexes. `post<T>()`
 is safe to call from producer threads. Dispatch happens on the thread that calls
-`emit<T>()` or `process()`.
+`emit<T>()` or `process()`, filtered by each subscription's `DeliveryPolicy`.
 
 Prefer calling `process()`, `emit()`, `subscribe()`, and `unsubscribe()` from the
 application/event-loop thread unless the application provides its own stronger

@@ -18,7 +18,7 @@ public:
     void start() {
         auto weak = weak_from_this();
 
-        m_endpoint.subscribe<TokenFoundEvent>(
+        m_endpoint.subscribe_queued<TokenFoundEvent>(
             weak,
             [weak](const TokenFoundEvent& event) {
                 auto self = weak.lock();

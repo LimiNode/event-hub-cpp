@@ -14,7 +14,7 @@ public:
         : EventNode(bus) {}
 
     void start() {
-        m_subscription = subscribe<Ping>([this](const Ping& ping) {
+        m_subscription = subscribe_any<Ping>([this](const Ping& ping) {
             total += ping.value;
         });
     }
@@ -65,7 +65,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         CountingListener listener;
 
-        endpoint.subscribe<DerivedEvent>(listener);
+        endpoint.subscribe_direct<DerivedEvent>(listener);
         endpoint.emit<DerivedEvent>(5);
 
         EVENT_HUB_TEST_CHECK(listener.total == 5);
@@ -75,9 +75,23 @@ int main() {
         event_hub::EventBus bus;
         event_hub::EventEndpoint endpoint(bus);
         CountingListener listener;
+
+        endpoint.subscribe_queued<DerivedEvent>(listener);
+        endpoint.emit<DerivedEvent>(5);
+        EVENT_HUB_TEST_CHECK(listener.total == 0);
+
+        endpoint.post<DerivedEvent>(7);
+        EVENT_HUB_TEST_CHECK(bus.process() == 1);
+        EVENT_HUB_TEST_CHECK(listener.total == 7);
+    }
+
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        CountingListener listener;
         auto listener_guard = std::make_shared<int>(0);
 
-        endpoint.subscribe<DerivedEvent>(
+        endpoint.subscribe_direct<DerivedEvent>(
             std::weak_ptr<int>(listener_guard),
             listener);
 

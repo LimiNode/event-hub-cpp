@@ -21,7 +21,7 @@ int main() {
     loop.add(foreground_tasks);
     loop.add(background_tasks);
 
-    endpoint.subscribe<LogEvent>([&loop](const LogEvent& event) {
+    endpoint.subscribe_queued<LogEvent>([&loop](const LogEvent& event) {
         std::cout << "event: " << event.text << '\n';
         if (event.text == "background timer fired") {
             loop.request_stop();

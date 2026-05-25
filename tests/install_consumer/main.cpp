@@ -11,7 +11,7 @@ int main() {
     event_hub::EventEndpoint endpoint(bus);
 
     int received = 0;
-    endpoint.subscribe<ConsumerEvent>([&received](const ConsumerEvent& event) {
+    endpoint.subscribe_queued<ConsumerEvent>([&received](const ConsumerEvent& event) {
         if (event.message == "installed") {
             ++received;
         }

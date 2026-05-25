@@ -33,11 +33,8 @@ namespace event_hub {
 /// with processing.
 class RunLoop {
 public:
-    /// \brief Monotonic clock used for delayed task waits.
-    using Clock = std::chrono::steady_clock;
-
-    /// \brief Duration type used for waits.
-    using Duration = Clock::duration;
+    using Clock = std::chrono::steady_clock; ///< Monotonic clock used for delayed task waits.
+    using Duration = Clock::duration; ///< Duration type used for waits.
 
     /// \brief Construct an empty run loop.
     explicit RunLoop(std::size_t max_tasks_per_manager = 128) noexcept

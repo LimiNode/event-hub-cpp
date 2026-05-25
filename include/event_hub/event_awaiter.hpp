@@ -23,9 +23,12 @@ namespace event_hub {
 ///
 /// Timeout and cancellation-token state are cooperative. They are polled by
 /// EventBus after emit() and process(), not by a background thread.
+/// Awaiters accept queued delivery by default; set delivery explicitly when an
+/// awaiter callback may run from an emit() caller thread.
 struct AwaitOptions {
     std::chrono::steady_clock::duration timeout{}; ///< Zero means no timeout.
     CancellationToken token{};                     ///< Empty means no token.
+    DeliveryPolicy delivery{DeliveryPolicy::queued}; ///< Accepted event delivery source.
     std::function<void()> on_timeout{};            ///< Called when timeout ends.
 
     /// \brief Create options with a timeout in milliseconds.
@@ -38,6 +41,12 @@ struct AwaitOptions {
     /// \brief Set timeout to timeout_ms milliseconds.
     AwaitOptions& set_timeout_ms(std::int64_t timeout_ms) {
         timeout = std::chrono::milliseconds(timeout_ms);
+        return *this;
+    }
+
+    /// \brief Set which delivery source can satisfy this awaiter.
+    AwaitOptions& set_delivery(DeliveryPolicy value) noexcept {
+        delivery = value;
         return *this;
     }
 };
@@ -55,8 +64,8 @@ template <typename EventType>
 class EventAwaiter final : public IAwaiterEx,
                            public std::enable_shared_from_this<EventAwaiter<EventType>> {
 public:
-    using Predicate = std::function<bool(const EventType&)>;
-    using Callback = std::function<void(const EventType&)>;
+    using Predicate = std::function<bool(const EventType&)>; ///< Predicate used to select awaited events.
+    using Callback = std::function<void(const EventType&)>; ///< Callback invoked for matching events.
 
     /// \brief Create, subscribe, and register a new awaiter.
     /// \param bus Event bus that must outlive the awaiter.
@@ -215,11 +224,13 @@ private:
         if (m_has_subscription_guard) {
             m_subscription_id = m_bus.subscribe<EventType>(
                 this,
+                m_options.delivery,
                 m_subscription_guard,
                 std::move(callback));
         } else {
             m_subscription_id = m_bus.subscribe<EventType>(
                 this,
+                m_options.delivery,
                 std::move(callback));
         }
     }

@@ -44,9 +44,10 @@ int main() {
     bus.process();
 
     // The stream handle owns cancellation for await_each(). After cancel(),
-    // later JobEvent emissions no longer reach the progress callback.
+    // later queued JobEvent deliveries no longer reach the progress callback.
     progress_stream->cancel();
-    endpoint.emit<JobEvent>("compile", 200);
+    endpoint.post<JobEvent>("compile", 200);
+    bus.process();
 
     event_hub::CancellationSource source;
     event_hub::AwaitOptions cancelled_options;

@@ -13,7 +13,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         int calls = 0;
 
-        endpoint.subscribe<Ping>([&calls](const Ping&) {
+        endpoint.subscribe_direct<Ping>([&calls](const Ping&) {
             ++calls;
         });
 
@@ -36,13 +36,13 @@ int main() {
         std::promise<void> release_promise;
         auto release = release_promise.get_future().share();
 
-        blocker->subscribe<Ping>(
+        blocker->subscribe_direct<Ping>(
             [&entered_promise, release](const Ping&) {
                 entered_promise.set_value();
                 release.wait();
             });
 
-        victim->subscribe<Ping>([&victim_calls](const Ping&) {
+        victim->subscribe_direct<Ping>([&victim_calls](const Ping&) {
             victim_calls.fetch_add(1, std::memory_order_relaxed);
         });
 
@@ -69,13 +69,13 @@ int main() {
         std::promise<void> release_promise;
         auto release = release_promise.get_future().share();
 
-        endpoint.subscribe<Ping>(
+        endpoint.subscribe_direct<Ping>(
             [&entered_promise, release](const Ping&) {
                 entered_promise.set_value();
                 release.wait();
             });
 
-        endpoint.subscribe<Ping>(
+        endpoint.subscribe_direct<Ping>(
             std::weak_ptr<int>(user_guard),
             [&guarded_calls](const Ping&) {
                 guarded_calls.fetch_add(1, std::memory_order_relaxed);
@@ -104,7 +104,7 @@ int main() {
         std::promise<void> release_promise;
         auto release = release_promise.get_future().share();
 
-        endpoint.subscribe<Ping>(
+        endpoint.subscribe_direct<Ping>(
             std::weak_ptr<LifetimeProbe>(user_guard),
             [&entered_promise, release, &guard_destroyed](const Ping&) {
                 entered_promise.set_value();

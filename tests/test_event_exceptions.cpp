@@ -11,10 +11,10 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         int callback_total = 0;
 
-        endpoint.subscribe<Ping>([](const Ping&) {
+        endpoint.subscribe_direct<Ping>([](const Ping&) {
             throw std::runtime_error("callback failed");
         });
-        endpoint.subscribe<Ping>([&callback_total](const Ping& ping) {
+        endpoint.subscribe_direct<Ping>([&callback_total](const Ping& ping) {
             callback_total += ping.value;
         });
 
@@ -45,10 +45,10 @@ int main() {
             }
         });
 
-        endpoint.subscribe<Ping>([](const Ping&) {
+        endpoint.subscribe_queued<Ping>([](const Ping&) {
             throw std::runtime_error("callback failed");
         });
-        endpoint.subscribe<Ping>([&callback_total](const Ping& ping) {
+        endpoint.subscribe_queued<Ping>([&callback_total](const Ping& ping) {
             callback_total += ping.value;
         });
 
@@ -65,7 +65,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         std::vector<int> seen;
 
-        endpoint.subscribe<Ping>([&bus, &seen](const Ping& ping) {
+        endpoint.subscribe_queued<Ping>([&bus, &seen](const Ping& ping) {
             if (ping.value == 1) {
                 bus.post<Ping>(4);
                 throw std::runtime_error("callback failed");

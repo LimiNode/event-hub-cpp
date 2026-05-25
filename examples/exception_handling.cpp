@@ -23,13 +23,13 @@ int main() {
         }
     });
 
-    endpoint.subscribe<CommandEvent>([](const CommandEvent& event) {
+    endpoint.subscribe_queued<CommandEvent>([](const CommandEvent& event) {
         if (event.name == "fail") {
             throw std::runtime_error("command failed");
         }
     });
 
-    endpoint.subscribe<CommandEvent>([](const CommandEvent& event) {
+    endpoint.subscribe_queued<CommandEvent>([](const CommandEvent& event) {
         std::cout << "observed command: " << event.name << '\n';
     });
 
@@ -40,7 +40,7 @@ int main() {
     event_hub::EventBus throwing_bus;
     event_hub::EventEndpoint throwing_endpoint(throwing_bus);
 
-    throwing_endpoint.subscribe<CommandEvent>([](const CommandEvent&) {
+    throwing_endpoint.subscribe_queued<CommandEvent>([](const CommandEvent&) {
         throw std::runtime_error("unhandled command failed");
     });
 

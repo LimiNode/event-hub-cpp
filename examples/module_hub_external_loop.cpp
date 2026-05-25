@@ -27,7 +27,7 @@ public:
 
 private:
     void on_initialize() override {
-        subscribe<FeedEvent>([this](const FeedEvent& event) {
+        subscribe_queued<FeedEvent>([this](const FeedEvent& event) {
             std::cout << "feed: " << event.symbol << " = "
                       << event.price << '\n';
 
@@ -116,11 +116,11 @@ int main() {
     event_hub::EventEndpoint output(hub.bus());
     bool running = true;
 
-    output.subscribe<ReportEvent>([](const ReportEvent& event) {
+    output.subscribe_queued<ReportEvent>([](const ReportEvent& event) {
         std::cout << "report: " << event.text << '\n';
     });
 
-    output.subscribe<StopEvent>([&running](const StopEvent&) {
+    output.subscribe_queued<StopEvent>([&running](const StopEvent&) {
         running = false;
     });
 

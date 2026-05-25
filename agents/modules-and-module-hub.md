@@ -118,6 +118,11 @@ on that old generation only after all sources are idle.
 
 Use the shared `EventBus` for module-to-module contracts. Events should remain
 small value-type DTOs and should not contain pointers to module internals.
+When a module callback assumes hub-thread or run-loop affinity, subscribe with
+`subscribe_queued<T>(...)` or `listen_queued<T>()`. The base
+`subscribe<T>(DeliveryPolicy, ...)` requires an explicit policy; use
+`subscribe_any<T>()` only when the callback is thread-safe and reentrancy-safe
+for both direct `emit()` and queued `process()` delivery.
 
 Use a module's `TaskManager` for private `void()` work that must run at explicit
 processing points. Heavy event handlers should enqueue tasks or post follow-up

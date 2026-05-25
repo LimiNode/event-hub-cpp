@@ -24,7 +24,7 @@ private:
     void on_initialize() override {
         std::cout << "command module: initialize on hub thread\n";
 
-        subscribe<CommandEvent>([this](const CommandEvent& event) {
+        subscribe_queued<CommandEvent>([this](const CommandEvent& event) {
             tasks().post([this, text = event.text] {
                 post<StatusEvent>("handled command: " + text);
             });
@@ -65,7 +65,7 @@ int main() {
     hub.emplace_module<CommandModule>();
     hub.emplace_module<WorkerSignalModule>();
 
-    endpoint.subscribe<StatusEvent>([&hub, &stopping_seen](const StatusEvent& event) {
+    endpoint.subscribe_queued<StatusEvent>([&hub, &stopping_seen](const StatusEvent& event) {
         std::cout << "status: " << event.text << '\n';
         if (event.text == "stopping") {
             stopping_seen.set_value();

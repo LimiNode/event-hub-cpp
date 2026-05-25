@@ -13,7 +13,7 @@ int main() {
 
         {
             event_hub::EventEndpoint endpoint(bus);
-            endpoint.subscribe<Ping>([&sync_total](const Ping& ping) {
+            endpoint.subscribe_direct<Ping>([&sync_total](const Ping& ping) {
                 sync_total += ping.value;
             });
 
@@ -28,13 +28,42 @@ int main() {
     {
         event_hub::EventBus bus;
         event_hub::EventEndpoint endpoint(bus);
+        int direct_total = 0;
+        int queued_total = 0;
+        int any_total = 0;
+
+        endpoint.subscribe_direct<Ping>([&direct_total](const Ping& ping) {
+            direct_total += ping.value;
+        });
+        endpoint.subscribe_queued<Ping>([&queued_total](const Ping& ping) {
+            queued_total += ping.value;
+        });
+        endpoint.subscribe_any<Ping>([&any_total](const Ping& ping) {
+            any_total += ping.value;
+        });
+
+        endpoint.emit<Ping>(2);
+        EVENT_HUB_TEST_CHECK(direct_total == 2);
+        EVENT_HUB_TEST_CHECK(queued_total == 0);
+        EVENT_HUB_TEST_CHECK(any_total == 2);
+
+        endpoint.post<Ping>(3);
+        EVENT_HUB_TEST_CHECK(bus.process() == 1);
+        EVENT_HUB_TEST_CHECK(direct_total == 2);
+        EVENT_HUB_TEST_CHECK(queued_total == 3);
+        EVENT_HUB_TEST_CHECK(any_total == 5);
+    }
+
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
         int ping_calls = 0;
         int message_calls = 0;
 
-        endpoint.subscribe<Ping>([&ping_calls](const Ping&) {
+        endpoint.subscribe_direct<Ping>([&ping_calls](const Ping&) {
             ++ping_calls;
         });
-        endpoint.subscribe<Message>([&message_calls](const Message&) {
+        endpoint.subscribe_direct<Message>([&message_calls](const Message&) {
             ++message_calls;
         });
 
@@ -51,7 +80,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         int calls = 0;
 
-        const auto id = endpoint.subscribe<Ping>([&calls](const Ping&) {
+        const auto id = endpoint.subscribe_direct<Ping>([&calls](const Ping&) {
             ++calls;
         });
 
@@ -59,10 +88,10 @@ int main() {
         endpoint.emit<Ping>(1);
         EVENT_HUB_TEST_CHECK(calls == 0);
 
-        endpoint.subscribe<Ping>([&calls](const Ping&) {
+        endpoint.subscribe_direct<Ping>([&calls](const Ping&) {
             ++calls;
         });
-        endpoint.subscribe<Message>([&calls](const Message&) {
+        endpoint.subscribe_direct<Message>([&calls](const Message&) {
             ++calls;
         });
 
@@ -77,9 +106,12 @@ int main() {
         int total = 0;
         int owner = 0;
 
-        const auto id = bus.subscribe<Ping>(&owner, [&total](const Ping& ping) {
-            total += ping.value;
-        });
+        const auto id = bus.subscribe<Ping>(
+            &owner,
+            event_hub::DeliveryPolicy::direct,
+            [&total](const Ping& ping) {
+                total += ping.value;
+            });
 
         bus.emit<Ping>(3);
         EVENT_HUB_TEST_CHECK(total == 3);
@@ -88,9 +120,12 @@ int main() {
         bus.emit<Ping>(4);
         EVENT_HUB_TEST_CHECK(total == 3);
 
-        bus.subscribe<Ping>(&owner, [&total](const Ping& ping) {
-            total += ping.value;
-        });
+        bus.subscribe<Ping>(
+            &owner,
+            event_hub::DeliveryPolicy::direct,
+            [&total](const Ping& ping) {
+                total += ping.value;
+            });
         bus.unsubscribe_all(&owner);
         bus.emit<Ping>(5);
         EVENT_HUB_TEST_CHECK(total == 3);
@@ -101,7 +136,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         int move_only_total = 0;
 
-        endpoint.subscribe<MoveOnly>(
+        endpoint.subscribe_direct<MoveOnly>(
             [&move_only_total](const MoveOnly& event) {
                 move_only_total += *event.value;
             });
@@ -116,7 +151,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         int async_total = 0;
 
-        endpoint.subscribe<Ping>([&async_total](const Ping& ping) {
+        endpoint.subscribe_queued<Ping>([&async_total](const Ping& ping) {
             async_total += ping.value;
         });
 
@@ -134,7 +169,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         std::vector<std::string> messages;
 
-        endpoint.subscribe<Message>([&messages](const Message& message) {
+        endpoint.subscribe_queued<Message>([&messages](const Message& message) {
             messages.push_back(message.text);
         });
 
@@ -155,7 +190,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         std::vector<int> seen;
 
-        endpoint.subscribe<Ping>([&endpoint, &seen](const Ping& ping) {
+        endpoint.subscribe_queued<Ping>([&endpoint, &seen](const Ping& ping) {
             seen.push_back(ping.value);
             if (ping.value == 1) {
                 endpoint.post<Ping>(2);
@@ -177,7 +212,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         int calls = 0;
 
-        endpoint.subscribe<Ping>([&calls](const Ping&) {
+        endpoint.subscribe_queued<Ping>([&calls](const Ping&) {
             ++calls;
         });
 
@@ -202,7 +237,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         std::atomic_int total{0};
 
-        endpoint.subscribe<Ping>([&total](const Ping& ping) {
+        endpoint.subscribe_queued<Ping>([&total](const Ping& ping) {
             total.fetch_add(ping.value, std::memory_order_relaxed);
         });
 

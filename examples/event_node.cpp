@@ -46,11 +46,11 @@ public:
         : EventNode(bus) {}
 
     void start() {
-        m_found_subscription = listen<TokenFoundEvent>();
-        listen<TokenRejectedEvent>();
+        m_found_subscription = listen_any<TokenFoundEvent>();
+        listen_queued<TokenRejectedEvent>();
 
-        // Plain events use subscribe<T>(callback), not listen<T>().
-        subscribe<ScanSummary>([](const ScanSummary& summary) {
+        // Plain events use callback subscriptions, not listen<T>().
+        subscribe_queued<ScanSummary>([](const ScanSummary& summary) {
             std::cout << "plain summary accepted=" << summary.accepted
                       << ", rejected=" << summary.rejected << '\n';
         });

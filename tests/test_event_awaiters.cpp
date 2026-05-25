@@ -31,12 +31,15 @@ int main() {
         event_hub::EventBus bus;
         event_hub::EventEndpoint endpoint(bus);
         int even_total = 0;
+        event_hub::AwaitOptions direct_options;
+        direct_options.set_delivery(event_hub::DeliveryPolicy::direct);
 
         auto awaiter = endpoint.await_each<Ping>(
             [](const Ping& ping) { return ping.value % 2 == 0; },
             [&even_total](const Ping& ping) {
                 even_total += ping.value;
-            });
+            },
+            direct_options);
 
         endpoint.emit<Ping>(1);
         endpoint.emit<Ping>(2);
@@ -117,6 +120,8 @@ int main() {
     {
         event_hub::EventBus bus;
         int direct_total = 0;
+        event_hub::AwaitOptions direct_options;
+        direct_options.set_delivery(event_hub::DeliveryPolicy::direct);
 
         auto awaiter = event_hub::EventAwaiter<Ping>::create(
             bus,
@@ -124,13 +129,33 @@ int main() {
             [&direct_total](const Ping& ping) {
                 direct_total += ping.value;
             },
-            event_hub::AwaitOptions{},
+            direct_options,
             true);
 
         bus.emit<Ping>(5);
         bus.emit<Ping>(6);
 
         EVENT_HUB_TEST_CHECK(direct_total == 5);
+        EVENT_HUB_TEST_CHECK(!awaiter->is_active());
+    }
+
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        int queued_total = 0;
+
+        auto awaiter = endpoint.await_once<Ping>(
+            [&queued_total](const Ping& ping) {
+                queued_total += ping.value;
+            });
+
+        endpoint.emit<Ping>(3);
+        EVENT_HUB_TEST_CHECK(queued_total == 0);
+        EVENT_HUB_TEST_CHECK(awaiter->is_active());
+
+        endpoint.post<Ping>(4);
+        EVENT_HUB_TEST_CHECK(bus.process() == 1);
+        EVENT_HUB_TEST_CHECK(queued_total == 4);
         EVENT_HUB_TEST_CHECK(!awaiter->is_active());
     }
 

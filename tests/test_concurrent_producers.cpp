@@ -20,7 +20,7 @@ int main() {
         event_hub::EventEndpoint endpoint(bus);
         std::atomic_int received{0};
 
-        endpoint.subscribe<Ping>([&](const Ping& ping) {
+        endpoint.subscribe_queued<Ping>([&](const Ping& ping) {
             received.fetch_add(ping.value, std::memory_order_relaxed);
         });
 

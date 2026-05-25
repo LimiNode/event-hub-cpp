@@ -14,10 +14,7 @@
 
 namespace event_hub {
 
-/// \brief Unique task identifier.
-///
-/// The value zero is reserved for invalid or rejected submissions.
-using TaskId = std::uint64_t;
+using TaskId = std::uint64_t; ///< Unique task identifier; zero is reserved for invalid or rejected submissions.
 
 class TaskManager;
 
@@ -29,14 +26,9 @@ class TaskManager;
 /// the requested change.
 class TaskContext {
 public:
-    /// \brief Monotonic clock used by TaskManager scheduling.
-    using Clock = std::chrono::steady_clock;
-
-    /// \brief Time point type used for rescheduling.
-    using TimePoint = Clock::time_point;
-
-    /// \brief Duration type used for rescheduling.
-    using Duration = Clock::duration;
+    using Clock = std::chrono::steady_clock; ///< Monotonic clock used by TaskManager scheduling.
+    using TimePoint = Clock::time_point; ///< Time point type used for rescheduling.
+    using Duration = Clock::duration; ///< Duration type used for rescheduling.
 
     /// \brief Construct an inert context.
     TaskContext() noexcept = default;
@@ -109,25 +101,19 @@ enum class TaskPriority : std::uint8_t {
 
 /// \brief Options used when submitting a task.
 struct TaskOptions {
-    TaskPriority priority{TaskPriority::normal};
+    TaskPriority priority{TaskPriority::normal}; ///< Priority used when the task becomes ready.
 };
 
 /// \brief Scheduling policy used by periodic tasks.
 enum class PeriodicSchedule : std::uint8_t {
-    /// \brief Wait one interval after each callback finishes.
-    fixed_delay = 0,
-
-    /// \brief Schedule each cycle from the previous planned deadline.
-    fixed_rate = 1
+    fixed_delay = 0, ///< Wait one interval after each callback finishes.
+    fixed_rate = 1 ///< Schedule each cycle from the previous planned deadline.
 };
 
 /// \brief Options used when submitting a periodic task.
 struct PeriodicTaskOptions {
-    /// \brief Priority used whenever a periodic cycle becomes ready.
-    TaskPriority priority{TaskPriority::normal};
-
-    /// \brief Timing policy used for cycles after the first run.
-    PeriodicSchedule schedule{PeriodicSchedule::fixed_delay};
+    TaskPriority priority{TaskPriority::normal}; ///< Priority used whenever a periodic cycle becomes ready.
+    PeriodicSchedule schedule{PeriodicSchedule::fixed_delay}; ///< Timing policy used for cycles after the first run.
 };
 
 namespace detail {

@@ -152,7 +152,7 @@ public:
         : EventNode(bus) {}
 
     void start() {
-        listen<NodeTestEvent>();
+        listen_queued<NodeTestEvent>();
     }
 
     void on_event(const event_hub::Event& event) override {
@@ -182,7 +182,7 @@ public:
                std::shared_future<void> release) {
         auto weak = weak_from_this();
 
-        m_endpoint.subscribe<Ping>(
+        m_endpoint.subscribe_direct<Ping>(
             weak,
             [weak, &entered, release](const Ping&) {
                 auto self = weak.lock();

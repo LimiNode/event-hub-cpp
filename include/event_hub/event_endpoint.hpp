@@ -30,6 +30,10 @@ namespace event_hub {
 /// and removes all subscriptions registered through the endpoint. Endpoint
 /// subscriptions carry a lifetime guard so callbacks copied by an active
 /// dispatch are skipped if the endpoint guard has already expired.
+/// subscribe() requires an explicit DeliveryPolicy. subscribe_direct()
+/// callbacks run only from emit() caller threads. subscribe_queued() callbacks
+/// run only from process() or run-loop threads. subscribe_any() keeps the
+/// compatibility behavior and accepts both sources.
 ///
 /// Use the overloads that take `std::weak_ptr` when callbacks also touch an
 /// object whose lifetime is separate from the endpoint. In that case both the
@@ -90,27 +94,70 @@ public:
         return m_bus;
     }
 
-    /// \brief Subscribe this endpoint to a concrete event type.
+    /// \brief Subscribe this endpoint to both delivery sources.
     /// \tparam EventType Concrete event type to receive.
     /// \tparam Callback Callback type invocable with `const EventType&`.
     /// \param callback Callback invoked when EventType is dispatched.
     /// \return Subscription id that can be used for targeted unsubscription.
     ///
-    /// The subscription uses the endpoint lifetime guard. Closing or destroying
-    /// the endpoint prevents guarded callbacks from starting later.
+    /// The subscription uses the endpoint lifetime guard. Closing or
+    /// destroying the endpoint prevents guarded callbacks from starting later.
     template <typename EventType,
               typename Callback,
               typename std::enable_if<
                   std::is_invocable_v<Callback&, const EventType&>,
                   int>::type = 0>
-    EventBus::SubscriptionId subscribe(Callback&& callback) {
+    EventBus::SubscriptionId subscribe_any(Callback&& callback) {
+        return subscribe<EventType>(
+            DeliveryPolicy::any,
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe this endpoint with an explicit delivery policy.
+    /// \tparam EventType Concrete event type to receive.
+    /// \tparam Callback Callback type invocable with `const EventType&`.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param callback Callback invoked when EventType is dispatched.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType,
+              typename Callback,
+              typename std::enable_if<
+                  std::is_invocable_v<Callback&, const EventType&>,
+                  int>::type = 0>
+    EventBus::SubscriptionId subscribe(DeliveryPolicy delivery,
+                                       Callback&& callback) {
         return m_bus.subscribe<EventType>(
             this,
+            delivery,
             guard(),
             std::forward<Callback>(callback));
     }
 
-    /// \brief Subscribe with an additional user lifetime guard.
+    /// \brief Subscribe to direct emit() delivery only.
+    template <typename EventType,
+              typename Callback,
+              typename std::enable_if<
+                  std::is_invocable_v<Callback&, const EventType&>,
+                  int>::type = 0>
+    EventBus::SubscriptionId subscribe_direct(Callback&& callback) {
+        return subscribe<EventType>(
+            DeliveryPolicy::direct,
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe to queued process() delivery only.
+    template <typename EventType,
+              typename Callback,
+              typename std::enable_if<
+                  std::is_invocable_v<Callback&, const EventType&>,
+                  int>::type = 0>
+    EventBus::SubscriptionId subscribe_queued(Callback&& callback) {
+        return subscribe<EventType>(
+            DeliveryPolicy::queued,
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe to both delivery sources with an additional user guard.
     /// \tparam EventType Concrete event type to receive.
     /// \tparam Guard Type stored by the user weak guard.
     /// \tparam Callback Callback type invocable with `const EventType&`.
@@ -128,13 +175,38 @@ public:
               typename std::enable_if<
                   std::is_invocable_v<Callback&, const EventType&>,
                   int>::type = 0>
-    EventBus::SubscriptionId subscribe(std::weak_ptr<Guard> user_guard,
+    EventBus::SubscriptionId subscribe_any(std::weak_ptr<Guard> user_guard,
+                                           Callback&& callback) {
+        return subscribe<EventType>(
+            DeliveryPolicy::any,
+            std::move(user_guard),
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe with a delivery policy and additional lifetime guard.
+    /// \tparam EventType Concrete event type to receive.
+    /// \tparam Guard Type stored by the user weak guard.
+    /// \tparam Callback Callback type invocable with `const EventType&`.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param user_guard Additional weak guard that must lock before the
+    /// callback is invoked.
+    /// \param callback Callback invoked when EventType is dispatched.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType,
+              typename Guard,
+              typename Callback,
+              typename std::enable_if<
+                  std::is_invocable_v<Callback&, const EventType&>,
+                  int>::type = 0>
+    EventBus::SubscriptionId subscribe(DeliveryPolicy delivery,
+                                       std::weak_ptr<Guard> user_guard,
                                        Callback&& callback) {
         std::function<void(const EventType&)> typed_callback(
             std::forward<Callback>(callback));
 
         return m_bus.subscribe<EventType>(
             this,
+            delivery,
             guard(),
             [user_guard = std::move(user_guard),
              callback = std::move(typed_callback)](const EventType& event) mutable {
@@ -147,16 +219,69 @@ public:
             });
     }
 
-    /// \brief Subscribe an EventListener through this endpoint.
+    /// \brief Subscribe to direct emit() delivery with an additional guard.
+    template <typename EventType,
+              typename Guard,
+              typename Callback,
+              typename std::enable_if<
+                  std::is_invocable_v<Callback&, const EventType&>,
+                  int>::type = 0>
+    EventBus::SubscriptionId subscribe_direct(std::weak_ptr<Guard> user_guard,
+                                              Callback&& callback) {
+        return subscribe<EventType>(
+            DeliveryPolicy::direct,
+            std::move(user_guard),
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe to queued process() delivery with an additional guard.
+    template <typename EventType,
+              typename Guard,
+              typename Callback,
+              typename std::enable_if<
+                  std::is_invocable_v<Callback&, const EventType&>,
+                  int>::type = 0>
+    EventBus::SubscriptionId subscribe_queued(std::weak_ptr<Guard> user_guard,
+                                              Callback&& callback) {
+        return subscribe<EventType>(
+            DeliveryPolicy::queued,
+            std::move(user_guard),
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe an EventListener to both delivery sources.
     /// \tparam EventType Event type derived from event_hub::Event.
     /// \param listener Listener whose on_event() method is invoked.
     /// \return Subscription id that can be used for targeted unsubscription.
     template <typename EventType>
-    EventBus::SubscriptionId subscribe(EventListener& listener) {
-        return m_bus.subscribe<EventType>(this, guard(), listener);
+    EventBus::SubscriptionId subscribe_any(EventListener& listener) {
+        return subscribe<EventType>(DeliveryPolicy::any, listener);
     }
 
-    /// \brief Subscribe an EventListener with an additional user guard.
+    /// \brief Subscribe an EventListener with an explicit delivery policy.
+    /// \tparam EventType Event type derived from event_hub::Event.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param listener Listener whose on_event() method is invoked.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType>
+    EventBus::SubscriptionId subscribe(DeliveryPolicy delivery,
+                                       EventListener& listener) {
+        return m_bus.subscribe<EventType>(this, delivery, guard(), listener);
+    }
+
+    /// \brief Subscribe an EventListener to direct emit() delivery only.
+    template <typename EventType>
+    EventBus::SubscriptionId subscribe_direct(EventListener& listener) {
+        return subscribe<EventType>(DeliveryPolicy::direct, listener);
+    }
+
+    /// \brief Subscribe an EventListener to queued process() delivery only.
+    template <typename EventType>
+    EventBus::SubscriptionId subscribe_queued(EventListener& listener) {
+        return subscribe<EventType>(DeliveryPolicy::queued, listener);
+    }
+
+    /// \brief Subscribe an EventListener to both sources with a user guard.
     /// \tparam EventType Event type derived from event_hub::Event.
     /// \tparam Guard Type stored by the user weak guard.
     /// \param user_guard Additional weak guard that must lock before listener
@@ -164,13 +289,52 @@ public:
     /// \param listener Listener whose on_event() method is invoked.
     /// \return Subscription id that can be used for targeted unsubscription.
     template <typename EventType, typename Guard>
-    EventBus::SubscriptionId subscribe(std::weak_ptr<Guard> user_guard,
+    EventBus::SubscriptionId subscribe_any(std::weak_ptr<Guard> user_guard,
+                                           EventListener& listener) {
+        return subscribe<EventType>(
+            DeliveryPolicy::any,
+            std::move(user_guard),
+            listener);
+    }
+
+    /// \brief Subscribe an EventListener with delivery policy and user guard.
+    /// \tparam EventType Event type derived from event_hub::Event.
+    /// \tparam Guard Type stored by the user weak guard.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param user_guard Additional weak guard that must lock before listener
+    /// invocation.
+    /// \param listener Listener whose on_event() method is invoked.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType, typename Guard>
+    EventBus::SubscriptionId subscribe(DeliveryPolicy delivery,
+                                       std::weak_ptr<Guard> user_guard,
                                        EventListener& listener) {
         return subscribe<EventType>(
+            delivery,
             std::move(user_guard),
             [&listener](const EventType& event) {
                 listener.on_event(event);
             });
+    }
+
+    /// \brief Subscribe an EventListener to direct emit() delivery with a guard.
+    template <typename EventType, typename Guard>
+    EventBus::SubscriptionId subscribe_direct(std::weak_ptr<Guard> user_guard,
+                                              EventListener& listener) {
+        return subscribe<EventType>(
+            DeliveryPolicy::direct,
+            std::move(user_guard),
+            listener);
+    }
+
+    /// \brief Subscribe an EventListener to queued process() delivery with a guard.
+    template <typename EventType, typename Guard>
+    EventBus::SubscriptionId subscribe_queued(std::weak_ptr<Guard> user_guard,
+                                              EventListener& listener) {
+        return subscribe<EventType>(
+            DeliveryPolicy::queued,
+            std::move(user_guard),
+            listener);
     }
 
     /// \brief Remove all subscriptions for a concrete event type.

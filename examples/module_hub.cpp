@@ -20,7 +20,7 @@ public:
 private:
     void on_initialize() override {
         std::cout << "console: initialize\n";
-        subscribe<LogEvent>([](const LogEvent& event) {
+        subscribe_queued<LogEvent>([](const LogEvent& event) {
             std::cout << event.source << ": " << event.text << '\n';
         });
     }
@@ -86,7 +86,7 @@ int main() {
     hub.emplace_module<InlineSchedulerModule>();
     hub.emplace_module<WorkerModule>();
 
-    control.subscribe<LogEvent>([&hub](const LogEvent& event) {
+    control.subscribe_queued<LogEvent>([&hub](const LogEvent& event) {
         if (event.source == "worker" && event.text == "finished") {
             hub.request_stop();
         }

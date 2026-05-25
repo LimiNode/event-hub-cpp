@@ -11,7 +11,7 @@ int main() {
         CountingNotifier notifier;
         int total = 0;
 
-        endpoint.subscribe<Ping>([&total](const Ping& ping) {
+        endpoint.subscribe_any<Ping>([&total](const Ping& ping) {
             total += ping.value;
         });
 
@@ -53,7 +53,7 @@ int main() {
         event_hub::SyncNotifier notifier;
         int total = 0;
 
-        endpoint.subscribe<Ping>([&total](const Ping& ping) {
+        endpoint.subscribe_queued<Ping>([&total](const Ping& ping) {
             total += ping.value;
         });
         bus.set_notifier(&notifier);

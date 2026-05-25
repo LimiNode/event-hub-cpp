@@ -41,8 +41,7 @@ public:
 /// and wait_for() from being lost.
 class SyncNotifier final : public INotifier {
 public:
-    /// \brief Monotonic clock used for wait durations.
-    using Clock = std::chrono::steady_clock;
+    using Clock = std::chrono::steady_clock; ///< Monotonic clock used for wait durations.
 
     /// \brief Increment the generation and wake all waiters.
     void notify() noexcept override {

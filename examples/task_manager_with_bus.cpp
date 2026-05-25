@@ -19,7 +19,7 @@ int main() {
     event_hub::EventEndpoint endpoint(bus);
     bool running = true;
 
-    endpoint.subscribe<LogEvent>([&running](const LogEvent& event) {
+    endpoint.subscribe_queued<LogEvent>([&running](const LogEvent& event) {
         std::cout << "event: " << event.text << '\n';
         if (event.text == "quit") {
             running = false;

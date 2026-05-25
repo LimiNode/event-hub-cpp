@@ -46,8 +46,8 @@ int main() {
     event_hub::EventEndpoint endpoint(bus);
     AuditListener audit;
 
-    endpoint.subscribe<SettingsReloadedEvent>(audit);
-    endpoint.subscribe<SettingsReloadFailedEvent>(audit);
+    endpoint.subscribe_direct<SettingsReloadedEvent>(audit);
+    endpoint.subscribe_direct<SettingsReloadFailedEvent>(audit);
 
     endpoint.emit<SettingsReloadedEvent>("app.json");
     endpoint.emit<SettingsReloadFailedEvent>("runtime.json", "file not found");

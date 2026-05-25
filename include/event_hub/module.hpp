@@ -25,23 +25,15 @@ class ModuleHub;
 
 /// \brief Defines how a module task manager is processed.
 enum class ModuleExecutionMode : std::uint8_t {
-    /// Module tasks are processed by ModuleHub::process().
-    inline_in_hub,
-
-    /// Module tasks are processed by the module's private worker thread.
-    private_thread,
-
-    /// Module tasks are owned by the module but processed by external code.
-    manual
+    inline_in_hub, ///< Module tasks are processed by ModuleHub::process().
+    private_thread, ///< Module tasks are processed by the module's private worker thread.
+    manual ///< Module tasks are owned by the module but processed by external code.
 };
 
 /// \brief Configuration for Module task execution.
 struct ModuleOptions {
-    /// Task manager execution mode.
-    ModuleExecutionMode execution{ModuleExecutionMode::inline_in_hub};
-
-    /// Maximum task callbacks processed for this module in one pass.
-    std::size_t max_tasks_per_process{64};
+    ModuleExecutionMode execution{ModuleExecutionMode::inline_in_hub}; ///< Task manager execution mode.
+    std::size_t max_tasks_per_process{64}; ///< Maximum task callbacks processed for this module in one pass.
 };
 
 /// \class Module
@@ -56,8 +48,7 @@ struct ModuleOptions {
 /// the EventBus and TaskManager threading rules.
 class Module : public EventNode {
 public:
-    /// \brief Monotonic time point used for module deadline hints.
-    using TimePoint = TaskManager::TimePoint;
+    using TimePoint = TaskManager::TimePoint; ///< Monotonic time point used for module deadline hints.
 
     /// \brief Construct a module connected to a shared bus.
     explicit Module(EventBus& bus, ModuleOptions options = {})

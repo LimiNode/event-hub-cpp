@@ -28,7 +28,7 @@ int main() {
     event_hub::EventEndpoint client(bus);
     event_hub::EventEndpoint service(bus);
 
-    service.subscribe<PriceRequest>([&service](const PriceRequest& request) {
+    service.subscribe_queued<PriceRequest>([&service](const PriceRequest& request) {
         PriceResult result;
         result.request_id = request.request_id;
         result.symbol = request.symbol;
@@ -51,7 +51,7 @@ int main() {
     bus.process(); // Handles PriceRequest and posts PriceResult.
     bus.process(); // Handles PriceResult and invokes the request callback.
 
-    service.subscribe<BalanceRequest>([](const BalanceRequest& request) {
+    service.subscribe_queued<BalanceRequest>([](const BalanceRequest& request) {
         BalanceResult result;
         result.balance = request.account == "demo" ? 10000.0 : 1000.0;
 

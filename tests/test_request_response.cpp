@@ -127,7 +127,7 @@ public:
 };
 
 void add_echo_service(event_hub::EventEndpoint& service) {
-    service.subscribe<EchoRequest>([&service](const EchoRequest& request) {
+    service.subscribe_queued<EchoRequest>([&service](const EchoRequest& request) {
         EchoResult result;
         result.request_id = request.request_id;
         result.value = request.value * 2;
@@ -221,7 +221,7 @@ void test_request_traits_custom_field() {
     event_hub::EventEndpoint client(bus);
     event_hub::EventEndpoint service(bus);
 
-    service.subscribe<CustomRequest>([&service](const CustomRequest& request) {
+    service.subscribe_queued<CustomRequest>([&service](const CustomRequest& request) {
         CustomResult result;
         result.correlation_id = request.correlation_id;
         result.value = request.value + 3;
@@ -249,7 +249,7 @@ void test_reply_callback_in_event() {
     event_hub::EventEndpoint client(bus);
     event_hub::EventEndpoint service(bus);
 
-    service.subscribe<ReplyRequest>([](const ReplyRequest& request) {
+    service.subscribe_queued<ReplyRequest>([](const ReplyRequest& request) {
         EchoResult result;
         result.value = request.value * 3;
         request.reply(result);

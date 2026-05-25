@@ -15,7 +15,7 @@ int main() {
     bus.set_notifier(&notifier);
 
     event_hub::EventEndpoint endpoint(bus);
-    endpoint.subscribe<MessageEvent>([](const MessageEvent& event) {
+    endpoint.subscribe_queued<MessageEvent>([](const MessageEvent& event) {
         std::cout << "event: " << event.text << '\n';
     });
 

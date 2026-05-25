@@ -32,32 +32,23 @@
 
 namespace event_hub {
 
-/// \brief Stable identifier for a calendar rule owned by CalendarScheduler.
-using CalendarTaskId = std::uint64_t;
+using CalendarTaskId = std::uint64_t; ///< Stable identifier for a calendar rule owned by CalendarScheduler.
 
-/// \brief Local time of day used by calendar rules.
-using LocalTime = time_shield::TimeStruct;
+using LocalTime = time_shield::TimeStruct; ///< Local time of day used by calendar rules.
 
-/// \brief Sunday weekday alias for calendar schedules.
-inline constexpr time_shield::Weekday SUN = time_shield::SUN;
+inline constexpr time_shield::Weekday SUN = time_shield::SUN; ///< Sunday weekday alias for calendar schedules.
 
-/// \brief Monday weekday alias for calendar schedules.
-inline constexpr time_shield::Weekday MON = time_shield::MON;
+inline constexpr time_shield::Weekday MON = time_shield::MON; ///< Monday weekday alias for calendar schedules.
 
-/// \brief Tuesday weekday alias for calendar schedules.
-inline constexpr time_shield::Weekday TUE = time_shield::TUE;
+inline constexpr time_shield::Weekday TUE = time_shield::TUE; ///< Tuesday weekday alias for calendar schedules.
 
-/// \brief Wednesday weekday alias for calendar schedules.
-inline constexpr time_shield::Weekday WED = time_shield::WED;
+inline constexpr time_shield::Weekday WED = time_shield::WED; ///< Wednesday weekday alias for calendar schedules.
 
-/// \brief Thursday weekday alias for calendar schedules.
-inline constexpr time_shield::Weekday THU = time_shield::THU;
+inline constexpr time_shield::Weekday THU = time_shield::THU; ///< Thursday weekday alias for calendar schedules.
 
-/// \brief Friday weekday alias for calendar schedules.
-inline constexpr time_shield::Weekday FRI = time_shield::FRI;
+inline constexpr time_shield::Weekday FRI = time_shield::FRI; ///< Friday weekday alias for calendar schedules.
 
-/// \brief Saturday weekday alias for calendar schedules.
-inline constexpr time_shield::Weekday SAT = time_shield::SAT;
+inline constexpr time_shield::Weekday SAT = time_shield::SAT; ///< Saturday weekday alias for calendar schedules.
 
 /// \brief Build a time-of-day value for calendar rules.
 ///
@@ -94,20 +85,14 @@ inline std::int32_t ms_of_day(const LocalTime& time) noexcept {
 
 /// \brief Policy for runs missed before a calendar rule is created.
 enum class CalendarMissedRunPolicy : std::uint8_t {
-    /// \brief Skip missed work and schedule the next future occurrence.
-    skip = 0,
-
-    /// \brief Queue one missed occurrence immediately.
-    run_once_immediately = 1
+    skip = 0, ///< Skip missed work and schedule the next future occurrence.
+    run_once_immediately = 1 ///< Queue one missed occurrence immediately.
 };
 
 /// \brief Policy for occurrences that become overdue while a callback runs.
 enum class CalendarOverlapPolicy : std::uint8_t {
-    /// \brief Skip overdue occurrences and schedule the next future one.
-    skip = 0,
-
-    /// \brief Queue one overdue occurrence for the next process() pass.
-    queue_one_after_current = 1
+    skip = 0, ///< Skip overdue occurrences and schedule the next future one.
+    queue_one_after_current = 1 ///< Queue one overdue occurrence for the next process() pass.
 };
 
 /// \brief Observer event emitted by CalendarScheduler.
@@ -123,23 +108,12 @@ enum class CalendarObserverEvent : std::uint8_t {
 
 /// \brief Observer payload for calendar task lifecycle events.
 struct CalendarObserverInfo {
-    /// \brief Stable calendar rule id.
-    CalendarTaskId id = 0;
-
-    /// \brief Current one-shot TaskManager id, or zero when none exists.
-    TaskId scheduled_task_id = 0;
-
-    /// \brief Planned UTC timestamp for the event, in Unix epoch milliseconds.
-    time_shield::ts_ms_t planned_utc_ms = 0;
-
-    /// \brief Observed UTC timestamp from the scheduler clock/provider.
-    time_shield::ts_ms_t observed_utc_ms = 0;
-
-    /// \brief Event kind.
-    CalendarObserverEvent event = CalendarObserverEvent::created;
-
-    /// \brief Number of callbacks that have completed normally.
-    std::uint64_t run_count = 0;
+    CalendarTaskId id = 0; ///< Stable calendar rule id.
+    TaskId scheduled_task_id = 0; ///< Current one-shot TaskManager id, or zero when none exists.
+    time_shield::ts_ms_t planned_utc_ms = 0; ///< Planned UTC timestamp for the event, in Unix epoch milliseconds.
+    time_shield::ts_ms_t observed_utc_ms = 0; ///< Observed UTC timestamp from the scheduler clock/provider.
+    CalendarObserverEvent event = CalendarObserverEvent::created; ///< Event kind.
+    std::uint64_t run_count = 0; ///< Number of callbacks that have completed normally.
 };
 
 /// \brief Options for calendar scheduled tasks.
@@ -173,14 +147,11 @@ struct CalendarTaskOptions {
         return options;
     }
 
-    /// \brief Priority used for each queued one-shot callback.
-    TaskPriority priority{TaskPriority::normal};
+    TaskPriority priority{TaskPriority::normal}; ///< Priority used for each queued one-shot callback.
 
-    /// \brief How to handle runs missed before rule creation.
-    CalendarMissedRunPolicy missed_policy{CalendarMissedRunPolicy::skip};
+    CalendarMissedRunPolicy missed_policy{CalendarMissedRunPolicy::skip}; ///< Missed-run handling policy.
 
-    /// \brief How to handle runs overdue after the previous callback.
-    CalendarOverlapPolicy overlap_policy{CalendarOverlapPolicy::skip};
+    CalendarOverlapPolicy overlap_policy{CalendarOverlapPolicy::skip}; ///< Overdue-run handling policy.
 
     /// \brief Time-zone context for local calendar rules. Defaults to UTC.
     ///
@@ -260,8 +231,7 @@ struct WeeklySchedule {
         return *this;
     }
 
-    /// \brief Seconds of day for each weekday, where SUN is index 0.
-    std::array<std::vector<int>, 7> seconds_by_weekday{};
+    std::array<std::vector<int>, 7> seconds_by_weekday{}; ///< Seconds of day for each weekday, where SUN is index 0.
 };
 
 /// \brief Monthly local-time schedule, indexed by day of month.
@@ -286,8 +256,7 @@ struct MonthlySchedule {
         return *this;
     }
 
-    /// \brief Seconds of day for days 1..31. Index 0 is ignored.
-    std::array<std::vector<int>, 32> seconds_by_month_day{};
+    std::array<std::vector<int>, 32> seconds_by_month_day{}; ///< Seconds of day for days 1..31. Index 0 is ignored.
 };
 
 } // namespace event_hub

@@ -15,11 +15,11 @@ int main() {
     event_hub::EventBus bus;
     event_hub::EventEndpoint endpoint(bus);
 
-    endpoint.subscribe<UserLoggedInEvent>([](const UserLoggedInEvent& event) {
+    endpoint.subscribe_direct<UserLoggedInEvent>([](const UserLoggedInEvent& event) {
         std::cout << "user logged in: " << event.name << '\n';
     });
 
-    const auto task_subscription = endpoint.subscribe<TaskQueuedEvent>(
+    const auto task_subscription = endpoint.subscribe_queued<TaskQueuedEvent>(
         [](const TaskQueuedEvent& event) {
             std::cout << "task queued: " << event.task_id << '\n';
         });

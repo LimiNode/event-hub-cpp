@@ -41,13 +41,21 @@ struct IsSingleEventArgument<EventType, Arg>
 template <typename EventType>
 class EventAwaiter;
 
+/// \brief Delivery contract requested by an event subscription.
+enum class DeliveryPolicy : std::uint8_t {
+    direct, ///< Receive only immediate emit() delivery on the caller thread.
+    queued, ///< Receive only queued delivery from process() or run-loop threads.
+    any ///< Receive both direct emit() and queued process() delivery.
+};
+
 /// \class EventBus
 /// \brief Central typed event bus with synchronous and queued dispatch.
 ///
 /// Subscriptions are keyed by concrete C++ type. `post<T>()` is safe for
 /// producer threads; callbacks are invoked on the thread that calls `emit<T>()`
-/// or `process()`. Guarded subscriptions are skipped when their guard expires
-/// before the callback starts.
+/// or `process()` according to the subscription DeliveryPolicy. Guarded
+/// subscriptions are skipped when their guard expires before the callback
+/// starts.
 ///
 /// The bus copies matching callback records before dispatch and releases its
 /// subscription mutex before invoking user code. Handlers may therefore post,
@@ -56,12 +64,14 @@ class EventAwaiter;
 /// \note EventBus must outlive all EventEndpoint and EventAwaiter instances
 /// that reference it.
 class EventBus {
-public:
-    /// \brief Unique subscription identifier.
-    using SubscriptionId = std::uint64_t;
+    enum class DispatchSource : std::uint8_t {
+        direct,
+        queued
+    };
 
-    /// \brief Callback used to observe exceptions thrown by user callbacks.
-    using ExceptionHandler = std::function<void(std::exception_ptr)>;
+public:
+    using SubscriptionId = std::uint64_t; ///< Unique subscription identifier.
+    using ExceptionHandler = std::function<void(std::exception_ptr)>; ///< Callback for user callback exceptions.
 
     /// \brief Construct an empty event bus.
     EventBus() = default;
@@ -104,7 +114,7 @@ public:
         return m_request_ids.next();
     }
 
-    /// \brief Subscribe an owner to a concrete event type.
+    /// \brief Subscribe an owner to both direct and queued delivery.
     /// \tparam EventType Concrete event type to receive.
     /// \tparam Callback Callback type invocable with `const EventType&`.
     /// \param owner Non-owning owner key used for grouped unsubscription.
@@ -115,7 +125,28 @@ public:
               typename std::enable_if<
                   std::is_invocable_v<Callback&, const EventType&>,
                   int>::type = 0>
-    SubscriptionId subscribe(void* owner, Callback&& callback) {
+    SubscriptionId subscribe_any(void* owner, Callback&& callback) {
+        return subscribe<EventType>(
+            owner,
+            DeliveryPolicy::any,
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe an owner to a concrete event type with a delivery policy.
+    /// \tparam EventType Concrete event type to receive.
+    /// \tparam Callback Callback type invocable with `const EventType&`.
+    /// \param owner Non-owning owner key used for grouped unsubscription.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param callback Callback invoked when EventType is dispatched.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType,
+              typename Callback,
+              typename std::enable_if<
+                  std::is_invocable_v<Callback&, const EventType&>,
+                  int>::type = 0>
+    SubscriptionId subscribe(void* owner,
+                             DeliveryPolicy delivery,
+                             Callback&& callback) {
         static_assert(!std::is_reference<EventType>::value,
                       "EventType must not be a reference");
 
@@ -127,6 +158,7 @@ public:
         CallbackRecord record;
         record.id = id;
         record.owner = owner;
+        record.delivery = delivery;
         record.callback = [callback = std::move(typed_callback)](
                               const void* event) {
             callback(*static_cast<const EventType*>(event));
@@ -138,7 +170,7 @@ public:
         return id;
     }
 
-    /// \brief Subscribe with a lifetime guard checked before callback start.
+    /// \brief Subscribe to both delivery sources with a lifetime guard.
     /// \tparam EventType Concrete event type to receive.
     /// \tparam Guard Type stored by the weak lifetime guard.
     /// \tparam Callback Callback type invocable with `const EventType&`.
@@ -156,7 +188,37 @@ public:
               typename std::enable_if<
                   std::is_invocable_v<Callback&, const EventType&>,
                   int>::type = 0>
+    SubscriptionId subscribe_any(void* owner,
+                                 std::weak_ptr<Guard> guard,
+                                 Callback&& callback) {
+        return subscribe<EventType>(
+            owner,
+            DeliveryPolicy::any,
+            std::move(guard),
+            std::forward<Callback>(callback));
+    }
+
+    /// \brief Subscribe with a delivery policy and lifetime guard.
+    /// \tparam EventType Concrete event type to receive.
+    /// \tparam Guard Type stored by the weak lifetime guard.
+    /// \tparam Callback Callback type invocable with `const EventType&`.
+    /// \param owner Non-owning owner key used for grouped unsubscription.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param guard Weak guard that must lock before callback invocation.
+    /// \param callback Callback invoked when EventType is dispatched.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    ///
+    /// When dispatch reaches this subscription, the guard is locked and the
+    /// resulting shared owner is held until the callback returns. Expired
+    /// guards skip the callback.
+    template <typename EventType,
+              typename Guard,
+              typename Callback,
+              typename std::enable_if<
+                  std::is_invocable_v<Callback&, const EventType&>,
+                  int>::type = 0>
     SubscriptionId subscribe(void* owner,
+                             DeliveryPolicy delivery,
                              std::weak_ptr<Guard> guard,
                              Callback&& callback) {
         static_assert(!std::is_reference<EventType>::value,
@@ -170,6 +232,7 @@ public:
         CallbackRecord record;
         record.id = id;
         record.owner = owner;
+        record.delivery = delivery;
         record.has_guard = true;
         record.guard = std::weak_ptr<void>(guard);
         record.callback = [callback = std::move(typed_callback)](
@@ -183,22 +246,38 @@ public:
         return id;
     }
 
-    /// \brief Subscribe a generic EventListener to an Event-derived type.
+    /// \brief Subscribe a generic EventListener to both delivery sources.
     /// \tparam EventType Event type derived from event_hub::Event.
     /// \param owner Non-owning owner key used for grouped unsubscription.
     /// \param listener Listener whose on_event() method is invoked.
     /// \return Subscription id that can be used for targeted unsubscription.
     template <typename EventType>
-    SubscriptionId subscribe(void* owner, EventListener& listener) {
+    SubscriptionId subscribe_any(void* owner, EventListener& listener) {
+        return subscribe<EventType>(owner, DeliveryPolicy::any, listener);
+    }
+
+    /// \brief Subscribe a generic EventListener with a delivery policy.
+    /// \tparam EventType Event type derived from event_hub::Event.
+    /// \param owner Non-owning owner key used for grouped unsubscription.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param listener Listener whose on_event() method is invoked.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType>
+    SubscriptionId subscribe(void* owner,
+                             DeliveryPolicy delivery,
+                             EventListener& listener) {
         static_assert(std::is_base_of<Event, EventType>::value,
                       "EventType must derive from event_hub::Event");
 
-        return subscribe<EventType>(owner, [&listener](const EventType& event) {
-            listener.on_event(event);
-        });
+        return subscribe<EventType>(
+            owner,
+            delivery,
+            [&listener](const EventType& event) {
+                listener.on_event(event);
+            });
     }
 
-    /// \brief Subscribe a generic EventListener with a lifetime guard.
+    /// \brief Subscribe a generic EventListener to both sources with a guard.
     /// \tparam EventType Event type derived from event_hub::Event.
     /// \tparam Guard Type stored by the weak lifetime guard.
     /// \param owner Non-owning owner key used for grouped unsubscription.
@@ -206,7 +285,27 @@ public:
     /// \param listener Listener whose on_event() method is invoked.
     /// \return Subscription id that can be used for targeted unsubscription.
     template <typename EventType, typename Guard>
+    SubscriptionId subscribe_any(void* owner,
+                                 std::weak_ptr<Guard> guard,
+                                 EventListener& listener) {
+        return subscribe<EventType>(
+            owner,
+            DeliveryPolicy::any,
+            std::move(guard),
+            listener);
+    }
+
+    /// \brief Subscribe a generic EventListener with a delivery policy and guard.
+    /// \tparam EventType Event type derived from event_hub::Event.
+    /// \tparam Guard Type stored by the weak lifetime guard.
+    /// \param owner Non-owning owner key used for grouped unsubscription.
+    /// \param delivery Delivery source accepted by the subscription.
+    /// \param guard Weak guard that must lock before listener invocation.
+    /// \param listener Listener whose on_event() method is invoked.
+    /// \return Subscription id that can be used for targeted unsubscription.
+    template <typename EventType, typename Guard>
     SubscriptionId subscribe(void* owner,
+                             DeliveryPolicy delivery,
                              std::weak_ptr<Guard> guard,
                              EventListener& listener) {
         static_assert(std::is_base_of<Event, EventType>::value,
@@ -214,6 +313,7 @@ public:
 
         return subscribe<EventType>(
             owner,
+            delivery,
             std::move(guard),
             [&listener](const EventType& event) {
                 listener.on_event(event);
@@ -293,10 +393,16 @@ public:
     /// \brief Dispatch an already constructed event synchronously.
     /// \tparam EventType Concrete event type to dispatch.
     /// \param event Event object to dispatch.
+    ///
+    /// Invokes DeliveryPolicy::direct and DeliveryPolicy::any subscriptions on
+    /// the caller thread. Queued-only subscriptions are not invoked.
+    ///
     /// \throws Any callback exception when no exception handler is configured.
     template <typename EventType>
     void emit(const EventType& event) const {
-        dispatch(std::type_index(typeid(EventType)), &event);
+        dispatch(std::type_index(typeid(EventType)),
+                 &event,
+                 DispatchSource::direct);
         poll_awaiters();
     }
 
@@ -304,6 +410,10 @@ public:
     /// \tparam EventType Concrete event type to construct and dispatch.
     /// \tparam Args Constructor argument types.
     /// \param args Arguments used to construct the event.
+    ///
+    /// Invokes DeliveryPolicy::direct and DeliveryPolicy::any subscriptions on
+    /// the caller thread. Queued-only subscriptions are not invoked.
+    ///
     /// \throws Any callback exception when no exception handler is configured.
     template <typename EventType,
               typename... Args,
@@ -312,13 +422,18 @@ public:
                   int>::type = 0>
     void emit(Args&&... args) const {
         EventType event{std::forward<Args>(args)...};
-        dispatch(std::type_index(typeid(EventType)), &event);
+        dispatch(std::type_index(typeid(EventType)),
+                 &event,
+                 DispatchSource::direct);
         poll_awaiters();
     }
 
     /// \brief Queue an already constructed event for later processing.
     /// \tparam EventType Concrete event type to queue.
     /// \param event Event object to copy into the queue.
+    ///
+    /// The later process() call invokes DeliveryPolicy::queued and
+    /// DeliveryPolicy::any subscriptions on the processing thread.
     template <typename EventType>
     void post(const EventType& event) {
         enqueue<EventType>(std::make_shared<EventType>(event));
@@ -327,6 +442,9 @@ public:
     /// \brief Queue an already constructed event for later processing.
     /// \tparam EventType Concrete event type to queue.
     /// \param event Event object to move into the queue.
+    ///
+    /// The later process() call invokes DeliveryPolicy::queued and
+    /// DeliveryPolicy::any subscriptions on the processing thread.
     template <typename EventType>
     void post(EventType&& event) {
         enqueue<EventType>(std::make_shared<EventType>(std::move(event)));
@@ -336,6 +454,9 @@ public:
     /// \tparam EventType Concrete event type to construct and queue.
     /// \tparam Args Constructor argument types.
     /// \param args Arguments used to construct the queued event.
+    ///
+    /// The later process() call invokes DeliveryPolicy::queued and
+    /// DeliveryPolicy::any subscriptions on the processing thread.
     template <typename EventType,
               typename... Args,
               typename std::enable_if<
@@ -364,7 +485,7 @@ public:
         while (!local_queue.empty()) {
             const auto& queued = local_queue.front();
             try {
-                dispatch(queued.type, queued.payload.get());
+                dispatch(queued.type, queued.payload.get(), DispatchSource::queued);
                 local_queue.pop();
             } catch (...) {
                 local_queue.pop();
@@ -423,6 +544,7 @@ private:
     struct CallbackRecord {
         SubscriptionId id = 0;
         void* owner = nullptr;
+        DeliveryPolicy delivery = DeliveryPolicy::any;
         bool has_guard = false;
         std::weak_ptr<void> guard;
         std::function<void(const void*)> callback;
@@ -475,7 +597,22 @@ private:
         std::swap(m_event_queue, restored);
     }
 
-    void dispatch(std::type_index type, const void* event) const {
+    static bool accepts_delivery(DeliveryPolicy delivery,
+                                 DispatchSource source) noexcept {
+        switch (delivery) {
+        case DeliveryPolicy::direct:
+            return source == DispatchSource::direct;
+        case DeliveryPolicy::queued:
+            return source == DispatchSource::queued;
+        case DeliveryPolicy::any:
+            return true;
+        }
+        return false;
+    }
+
+    void dispatch(std::type_index type,
+                  const void* event,
+                  DispatchSource source) const {
         std::vector<CallbackRecord> callbacks;
         {
             std::lock_guard<std::mutex> lock(m_subscriptions_mutex);
@@ -486,6 +623,10 @@ private:
         }
 
         for (const auto& record : callbacks) {
+            if (!accepts_delivery(record.delivery, source)) {
+                continue;
+            }
+
             std::shared_ptr<void> alive;
             if (record.has_guard) {
                 alive = record.guard.lock();

@@ -44,23 +44,12 @@ namespace event_hub {
 ///   lifetime APIs and must not be called concurrently with each other.
 class TaskManager {
 public:
-    /// \brief Monotonic clock used for delayed tasks.
-    using Clock = std::chrono::steady_clock;
-
-    /// \brief Wall-clock type accepted by add_task_at_system().
-    using SystemClock = std::chrono::system_clock;
-
-    /// \brief Time point type used by delayed tasks.
-    using TimePoint = Clock::time_point;
-
-    /// \brief Wall-clock time point converted to a steady deadline on submit.
-    using SystemTimePoint = SystemClock::time_point;
-
-    /// \brief Duration type used by delayed tasks.
-    using Duration = Clock::duration;
-
-    /// \brief Callback used to observe task callback exceptions.
-    using ExceptionHandler = std::function<void(std::exception_ptr)>;
+    using Clock = std::chrono::steady_clock; ///< Monotonic clock used for delayed tasks.
+    using SystemClock = std::chrono::system_clock; ///< Wall-clock type accepted by add_task_at_system().
+    using TimePoint = Clock::time_point; ///< Time point type used by delayed tasks.
+    using SystemTimePoint = SystemClock::time_point; ///< Wall-clock time point converted on submit.
+    using Duration = Clock::duration; ///< Duration type used by delayed tasks.
+    using ExceptionHandler = std::function<void(std::exception_ptr)>; ///< Callback for task callback exceptions.
 
     /// \brief Construct an empty manager.
     TaskManager() = default;
