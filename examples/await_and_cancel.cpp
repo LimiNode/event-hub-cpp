@@ -53,19 +53,21 @@ int main() {
     event_hub::AwaitOptions cancelled_options;
     cancelled_options.token = source.token();
     // Cancellation tokens are cooperative: the awaiter observes cancellation
-    // when the bus next emits or processes events and polls awaiters.
+    // when the bus next reaches a poll point accepted by the awaiter delivery
+    // policy. Awaiters use queued delivery by default.
     endpoint.await_once<JobEvent>(
         [](const JobEvent&) {
             std::cout << "this line is cancelled\n";
         },
         cancelled_options);
     source.cancel();
-    // This emit gives the bus a poll point where the cancelled token is seen.
-    endpoint.emit<JobEvent>("compile", 300);
+    // process() is the queued poll point where the cancelled token is seen.
+    bus.process();
 
     auto timeout_options = event_hub::AwaitOptions::timeout_ms(1);
     // Timeouts do not start a background thread. The callback fires when the
-    // bus is polled after the deadline has passed.
+    // bus is polled after the deadline has passed from an accepted delivery
+    // source. Awaiters use queued delivery by default, so process() invokes it.
     timeout_options.on_timeout = [] {
         std::cout << "timeout fired\n";
     };

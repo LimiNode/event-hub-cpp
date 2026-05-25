@@ -695,7 +695,7 @@ Inside `event_hub::Module` subclasses, prefer direct inherited methods:
 ```cpp
 subscribe<MyEvent>(...);
 post<MyEvent>(...);
-emit<MyEvent>(...);
+emit_direct<MyEvent>(...);
 request<MyRequestEvent, MyResultEvent>(...);
 ```
 

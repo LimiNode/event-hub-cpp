@@ -17,7 +17,7 @@ int main() {
 
         bus.set_notifier(&notifier);
 
-        endpoint.emit<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
         EVENT_HUB_TEST_CHECK(notifier.notifications.load(std::memory_order_relaxed) == 0);
         EVENT_HUB_TEST_CHECK(total == 1);
 

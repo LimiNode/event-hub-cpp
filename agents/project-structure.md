@@ -323,7 +323,7 @@ Inside an `event_hub::Module` subclass, prefer direct inherited methods:
 ```cpp
 subscribe<Event>(...);
 post<Event>(...);
-emit<Event>(...);
+emit_direct<Event>(...);
 request<RequestEvent, ResultEvent>(...);
 ```
 

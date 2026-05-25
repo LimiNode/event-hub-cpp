@@ -31,8 +31,8 @@ namespace event_hub {
 /// subscriptions carry a lifetime guard so callbacks copied by an active
 /// dispatch are skipped if the endpoint guard has already expired.
 /// subscribe() requires an explicit DeliveryPolicy. subscribe_direct()
-/// callbacks run only from emit() caller threads. subscribe_queued() callbacks
-/// run only from process() or run-loop threads. subscribe_any() keeps the
+/// callbacks run only from emit_direct() caller threads. subscribe_queued()
+/// callbacks run only from process() or run-loop threads. subscribe_any() keeps the
 /// compatibility behavior and accepts both sources.
 ///
 /// Use the overloads that take `std::weak_ptr` when callbacks also touch an
@@ -133,7 +133,7 @@ public:
             std::forward<Callback>(callback));
     }
 
-    /// \brief Subscribe to direct emit() delivery only.
+    /// \brief Subscribe to direct emit_direct() delivery only.
     template <typename EventType,
               typename Callback,
               typename std::enable_if<
@@ -219,7 +219,7 @@ public:
             });
     }
 
-    /// \brief Subscribe to direct emit() delivery with an additional guard.
+    /// \brief Subscribe to direct emit_direct() delivery with an additional guard.
     template <typename EventType,
               typename Guard,
               typename Callback,
@@ -269,7 +269,7 @@ public:
         return m_bus.subscribe<EventType>(this, delivery, guard(), listener);
     }
 
-    /// \brief Subscribe an EventListener to direct emit() delivery only.
+    /// \brief Subscribe an EventListener to direct emit_direct() delivery only.
     template <typename EventType>
     EventBus::SubscriptionId subscribe_direct(EventListener& listener) {
         return subscribe<EventType>(DeliveryPolicy::direct, listener);
@@ -317,7 +317,7 @@ public:
             });
     }
 
-    /// \brief Subscribe an EventListener to direct emit() delivery with a guard.
+    /// \brief Subscribe an EventListener to direct emit_direct() delivery with a guard.
     template <typename EventType, typename Guard>
     EventBus::SubscriptionId subscribe_direct(std::weak_ptr<Guard> user_guard,
                                               EventListener& listener) {
@@ -361,17 +361,19 @@ public:
     /// \brief Dispatch an already constructed event synchronously.
     /// \tparam EventType Concrete event type to dispatch.
     /// \param event Event object to dispatch.
+    /// \return Dispatch statistics for this event.
     /// \throws Any callback exception when no exception handler is configured
     /// on the bus.
     template <typename EventType>
-    void emit(const EventType& event) const {
-        m_bus.emit<EventType>(event);
+    DispatchResult emit_direct(const EventType& event) const {
+        return m_bus.emit_direct<EventType>(event);
     }
 
     /// \brief Construct and dispatch an event synchronously.
     /// \tparam EventType Concrete event type to construct and dispatch.
     /// \tparam Args Constructor argument types.
     /// \param args Arguments used to construct the event.
+    /// \return Dispatch statistics for this event.
     /// \throws Any callback exception when no exception handler is configured
     /// on the bus.
     template <typename EventType,
@@ -379,8 +381,9 @@ public:
               typename std::enable_if<
                   !detail::IsSingleEventArgument<EventType, Args...>::value,
                   int>::type = 0>
-    void emit(Args&&... args) const {
-        m_bus.template emit<EventType>(std::forward<Args>(args)...);
+    DispatchResult emit_direct(Args&&... args) const {
+        return m_bus.template emit_direct<EventType>(
+            std::forward<Args>(args)...);
     }
 
     /// \brief Queue an already constructed event for later processing.
@@ -421,8 +424,8 @@ public:
     /// \param options Timeout and cancellation options.
     /// \return Shared cancelable awaiter handle.
     ///
-    /// Timeouts and cancellation tokens are checked when the bus polls
-    /// awaiters from emit() or process().
+    /// Timeouts and cancellation tokens are checked when the bus reaches an
+    /// emit_direct() or process() poll point accepted by AwaitOptions::delivery.
     template <typename EventType,
               typename Predicate,
               typename Callback,

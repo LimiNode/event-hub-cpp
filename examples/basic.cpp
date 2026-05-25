@@ -24,7 +24,7 @@ int main() {
             std::cout << "task queued: " << event.task_id << '\n';
         });
 
-    endpoint.emit<UserLoggedInEvent>("alice");
+    endpoint.emit_direct<UserLoggedInEvent>("alice");
 
     endpoint.post<TaskQueuedEvent>("build-docs");
     std::cout << "pending before process: " << bus.pending_count() << '\n';

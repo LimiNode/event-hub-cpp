@@ -43,17 +43,32 @@ class EventAwaiter;
 
 /// \brief Delivery contract requested by an event subscription.
 enum class DeliveryPolicy : std::uint8_t {
-    direct, ///< Receive only immediate emit() delivery on the caller thread.
+    direct, ///< Receive only immediate emit_direct() delivery on the caller thread.
     queued, ///< Receive only queued delivery from process() or run-loop threads.
-    any ///< Receive both direct emit() and queued process() delivery.
+    any ///< Receive both direct emit_direct() and queued process() delivery.
+};
+
+/// \brief Per-event dispatch statistics.
+struct DispatchResult {
+    std::size_t matched = 0; ///< Subscriptions for the dispatched event type.
+    std::size_t delivered = 0; ///< Callbacks actually invoked.
+    std::size_t skipped = 0; ///< Subscriptions skipped by DeliveryPolicy.
+};
+
+/// \brief Diagnostic payload for delivery-policy mismatches.
+struct DeliveryMismatch {
+    std::type_index event_type{typeid(void)}; ///< Event type being dispatched.
+    DeliveryPolicy publisher_policy = DeliveryPolicy::any; ///< Dispatch source policy.
+    std::size_t skipped_subscribers = 0; ///< Subscribers skipped by DeliveryPolicy.
 };
 
 /// \class EventBus
 /// \brief Central typed event bus with synchronous and queued dispatch.
 ///
 /// Subscriptions are keyed by concrete C++ type. `post<T>()` is safe for
-/// producer threads; callbacks are invoked on the thread that calls `emit<T>()`
-/// or `process()` according to the subscription DeliveryPolicy. Guarded
+/// producer threads; callbacks are invoked on the thread that calls
+/// `emit_direct<T>()` or `process()` according to the subscription
+/// DeliveryPolicy. Guarded
 /// subscriptions are skipped when their guard expires before the callback
 /// starts.
 ///
@@ -64,14 +79,10 @@ enum class DeliveryPolicy : std::uint8_t {
 /// \note EventBus must outlive all EventEndpoint and EventAwaiter instances
 /// that reference it.
 class EventBus {
-    enum class DispatchSource : std::uint8_t {
-        direct,
-        queued
-    };
-
 public:
     using SubscriptionId = std::uint64_t; ///< Unique subscription identifier.
     using ExceptionHandler = std::function<void(std::exception_ptr)>; ///< Callback for user callback exceptions.
+    using DeliveryMismatchHandler = std::function<void(const DeliveryMismatch&)>; ///< Callback for policy mismatch diagnostics.
 
     /// \brief Construct an empty event bus.
     EventBus() = default;
@@ -106,6 +117,19 @@ public:
     void set_exception_handler(ExceptionHandler handler) {
         std::lock_guard<std::mutex> lock(m_exception_handler_mutex);
         m_exception_handler = std::move(handler);
+    }
+
+    /// \brief Set a handler for delivery-policy mismatches.
+    /// \param handler Handler to install. Passing an empty handler disables
+    /// mismatch diagnostics.
+    ///
+    /// The handler is called after dispatch when subscribers for the event type
+    /// exist but some were skipped because their DeliveryPolicy rejects the
+    /// dispatch source. Handler exceptions are reported to the bus exception
+    /// handler when one is configured; otherwise they are ignored.
+    void set_delivery_mismatch_handler(DeliveryMismatchHandler handler) {
+        std::lock_guard<std::mutex> lock(m_delivery_mismatch_handler_mutex);
+        m_delivery_mismatch_handler = std::move(handler);
     }
 
     /// \brief Return a bus-wide request id for request-response event pairs.
@@ -393,23 +417,26 @@ public:
     /// \brief Dispatch an already constructed event synchronously.
     /// \tparam EventType Concrete event type to dispatch.
     /// \param event Event object to dispatch.
+    /// \return Dispatch statistics for this event.
     ///
     /// Invokes DeliveryPolicy::direct and DeliveryPolicy::any subscriptions on
     /// the caller thread. Queued-only subscriptions are not invoked.
     ///
     /// \throws Any callback exception when no exception handler is configured.
     template <typename EventType>
-    void emit(const EventType& event) const {
-        dispatch(std::type_index(typeid(EventType)),
-                 &event,
-                 DispatchSource::direct);
-        poll_awaiters();
+    DispatchResult emit_direct(const EventType& event) const {
+        const auto result = dispatch(std::type_index(typeid(EventType)),
+                                     &event,
+                                     DispatchSource::direct);
+        poll_awaiters(DispatchSource::direct);
+        return result;
     }
 
     /// \brief Construct and dispatch an event synchronously.
     /// \tparam EventType Concrete event type to construct and dispatch.
     /// \tparam Args Constructor argument types.
     /// \param args Arguments used to construct the event.
+    /// \return Dispatch statistics for this event.
     ///
     /// Invokes DeliveryPolicy::direct and DeliveryPolicy::any subscriptions on
     /// the caller thread. Queued-only subscriptions are not invoked.
@@ -420,12 +447,13 @@ public:
               typename std::enable_if<
                   !detail::IsSingleEventArgument<EventType, Args...>::value,
                   int>::type = 0>
-    void emit(Args&&... args) const {
+    DispatchResult emit_direct(Args&&... args) const {
         EventType event{std::forward<Args>(args)...};
-        dispatch(std::type_index(typeid(EventType)),
-                 &event,
-                 DispatchSource::direct);
-        poll_awaiters();
+        const auto result = dispatch(std::type_index(typeid(EventType)),
+                                     &event,
+                                     DispatchSource::direct);
+        poll_awaiters(DispatchSource::direct);
+        return result;
     }
 
     /// \brief Queue an already constructed event for later processing.
@@ -495,7 +523,7 @@ public:
             ++processed;
         }
 
-        poll_awaiters();
+        poll_awaiters(DispatchSource::queued);
         return processed;
     }
 
@@ -529,8 +557,9 @@ public:
     }
 
     /// \brief Register an awaiter for timeout and cancellation polling.
-    /// \param awaiter Awaiter implementation to poll after emit() and
-    /// process(). Null pointers are ignored.
+    /// \param awaiter Awaiter implementation to poll at emit_direct() and
+    /// process() points accepted by its delivery policy. Null pointers are
+    /// ignored.
     void register_awaiter(const std::shared_ptr<IAwaiterEx>& awaiter) {
         if (!awaiter) {
             return;
@@ -610,9 +639,33 @@ private:
         return false;
     }
 
-    void dispatch(std::type_index type,
-                  const void* event,
-                  DispatchSource source) const {
+    static DeliveryPolicy source_policy(DispatchSource source) noexcept {
+        return source == DispatchSource::direct ? DeliveryPolicy::direct
+                                                : DeliveryPolicy::queued;
+    }
+
+    void report_delivery_mismatch(std::type_index type,
+                                  DispatchSource source,
+                                  std::size_t skipped) const noexcept {
+        if (skipped == 0U) {
+            return;
+        }
+
+        auto handler = delivery_mismatch_handler();
+        if (!handler) {
+            return;
+        }
+
+        try {
+            handler(DeliveryMismatch{type, source_policy(source), skipped});
+        } catch (...) {
+            report_exception_noexcept(std::current_exception());
+        }
+    }
+
+    DispatchResult dispatch(std::type_index type,
+                            const void* event,
+                            DispatchSource source) const {
         std::vector<CallbackRecord> callbacks;
         {
             std::lock_guard<std::mutex> lock(m_subscriptions_mutex);
@@ -622,8 +675,12 @@ private:
             }
         }
 
+        DispatchResult result;
+        result.matched = callbacks.size();
+
         for (const auto& record : callbacks) {
             if (!accepts_delivery(record.delivery, source)) {
+                ++result.skipped;
                 continue;
             }
 
@@ -637,6 +694,7 @@ private:
 
             if (record.callback) {
                 try {
+                    ++result.delivered;
                     record.callback(event);
                 } catch (...) {
                     if (!report_exception(std::current_exception())) {
@@ -645,6 +703,9 @@ private:
                 }
             }
         }
+
+        report_delivery_mismatch(type, source, result.skipped);
+        return result;
     }
 
     SubscriptionId next_subscription_id() {
@@ -654,6 +715,11 @@ private:
     ExceptionHandler exception_handler() const {
         std::lock_guard<std::mutex> lock(m_exception_handler_mutex);
         return m_exception_handler;
+    }
+
+    DeliveryMismatchHandler delivery_mismatch_handler() const {
+        std::lock_guard<std::mutex> lock(m_delivery_mismatch_handler_mutex);
+        return m_delivery_mismatch_handler;
     }
 
     bool report_exception(std::exception_ptr exception) const {
@@ -673,7 +739,7 @@ private:
         }
     }
 
-    void poll_awaiters() const {
+    void poll_awaiters(DispatchSource source) const {
         std::vector<std::shared_ptr<IAwaiterEx>> live;
         {
             std::lock_guard<std::mutex> lock(m_awaiters_mutex);
@@ -694,7 +760,7 @@ private:
         }
 
         for (auto& awaiter : live) {
-            awaiter->poll_timeout();
+            awaiter->poll_timeout(source);
         }
     }
 
@@ -713,6 +779,9 @@ private:
 
     mutable std::mutex m_exception_handler_mutex;
     ExceptionHandler m_exception_handler;
+
+    mutable std::mutex m_delivery_mismatch_handler_mutex;
+    DeliveryMismatchHandler m_delivery_mismatch_handler;
 
     std::atomic<SubscriptionId> m_next_subscription_id{1};
     RequestIdGenerator m_request_ids;

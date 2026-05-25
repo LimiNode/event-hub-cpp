@@ -49,8 +49,8 @@ int main() {
     endpoint.subscribe_direct<SettingsReloadedEvent>(audit);
     endpoint.subscribe_direct<SettingsReloadFailedEvent>(audit);
 
-    endpoint.emit<SettingsReloadedEvent>("app.json");
-    endpoint.emit<SettingsReloadFailedEvent>("runtime.json", "file not found");
+    endpoint.emit_direct<SettingsReloadedEvent>("app.json");
+    endpoint.emit_direct<SettingsReloadFailedEvent>("runtime.json", "file not found");
 
     SettingsReloadFailedEvent event("override.json", "invalid json");
     std::cout << "is SettingsReloadedEvent: "

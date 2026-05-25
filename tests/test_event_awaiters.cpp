@@ -23,7 +23,7 @@ int main() {
         EVENT_HUB_TEST_CHECK(bus.process() == 3);
         EVENT_HUB_TEST_CHECK(awaited == 8);
 
-        endpoint.emit<Ping>(8);
+        endpoint.emit_direct<Ping>(8);
         EVENT_HUB_TEST_CHECK(awaited == 8);
     }
 
@@ -41,11 +41,11 @@ int main() {
             },
             direct_options);
 
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Ping>(2);
-        endpoint.emit<Ping>(4);
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Ping>(2);
+        endpoint.emit_direct<Ping>(4);
         awaiter->cancel();
-        endpoint.emit<Ping>(6);
+        endpoint.emit_direct<Ping>(6);
 
         EVENT_HUB_TEST_CHECK(even_total == 6);
     }
@@ -71,8 +71,11 @@ int main() {
         EVENT_HUB_TEST_CHECK(!source.token().is_cancelled());
         EVENT_HUB_TEST_CHECK(options.token.is_cancelled());
 
-        endpoint.emit<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
 
+        EVENT_HUB_TEST_CHECK(!cancelled_called);
+        EVENT_HUB_TEST_CHECK(awaiter->is_active());
+        EVENT_HUB_TEST_CHECK(bus.process() == 0);
         EVENT_HUB_TEST_CHECK(!cancelled_called);
         EVENT_HUB_TEST_CHECK(!awaiter->is_active());
     }
@@ -93,7 +96,37 @@ int main() {
             options);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        endpoint.emit_direct<Ping>(1);
+        EVENT_HUB_TEST_CHECK(!timed_out);
+        EVENT_HUB_TEST_CHECK(awaiter->is_active());
+
         EVENT_HUB_TEST_CHECK(bus.process() == 0);
+        EVENT_HUB_TEST_CHECK(timed_out);
+        EVENT_HUB_TEST_CHECK(!awaiter->is_active());
+    }
+
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        bool timed_out = false;
+        auto options = event_hub::AwaitOptions::timeout_ms(1);
+        options.set_delivery(event_hub::DeliveryPolicy::direct);
+        options.on_timeout = [&timed_out] {
+            timed_out = true;
+        };
+
+        auto awaiter = endpoint.await_once<Message>(
+            [](const Message&) {
+                EVENT_HUB_TEST_CHECK(false && "direct timeout awaiter should not receive messages");
+            },
+            options);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        EVENT_HUB_TEST_CHECK(bus.process() == 0);
+        EVENT_HUB_TEST_CHECK(!timed_out);
+        EVENT_HUB_TEST_CHECK(awaiter->is_active());
+
+        endpoint.emit_direct<Ping>(1);
         EVENT_HUB_TEST_CHECK(timed_out);
         EVENT_HUB_TEST_CHECK(!awaiter->is_active());
     }
@@ -113,7 +146,7 @@ int main() {
         EVENT_HUB_TEST_CHECK(endpoint.is_closed());
         EVENT_HUB_TEST_CHECK(!awaiter->is_active());
 
-        bus.emit<Ping>(1);
+        bus.emit_direct<Ping>(1);
         EVENT_HUB_TEST_CHECK(calls == 0);
     }
 
@@ -132,8 +165,8 @@ int main() {
             direct_options,
             true);
 
-        bus.emit<Ping>(5);
-        bus.emit<Ping>(6);
+        bus.emit_direct<Ping>(5);
+        bus.emit_direct<Ping>(6);
 
         EVENT_HUB_TEST_CHECK(direct_total == 5);
         EVENT_HUB_TEST_CHECK(!awaiter->is_active());
@@ -149,7 +182,7 @@ int main() {
                 queued_total += ping.value;
             });
 
-        endpoint.emit<Ping>(3);
+        endpoint.emit_direct<Ping>(3);
         EVENT_HUB_TEST_CHECK(queued_total == 0);
         EVENT_HUB_TEST_CHECK(awaiter->is_active());
 

@@ -16,8 +16,8 @@ int main() {
             endpoint.unsubscribe(self_id);
         });
 
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
 
         EVENT_HUB_TEST_CHECK((calls == std::vector<int>{1}));
     }
@@ -36,8 +36,8 @@ int main() {
             calls.push_back(2);
         });
 
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
 
         EVENT_HUB_TEST_CHECK((calls == std::vector<int>{1, 2, 1}));
     }
@@ -58,8 +58,8 @@ int main() {
             }
         });
 
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
 
         EVENT_HUB_TEST_CHECK((calls == std::vector<int>{1, 1, 2}));
     }
@@ -78,8 +78,8 @@ int main() {
             calls.push_back(2);
         });
 
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Message>("ignored");
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Message>("ignored");
 
         EVENT_HUB_TEST_CHECK((calls == std::vector<int>{1}));
     }
@@ -100,9 +100,9 @@ int main() {
             calls.push_back(3);
         });
 
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Message>("still active");
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Message>("still active");
 
         EVENT_HUB_TEST_CHECK((calls == std::vector<int>{1, 2, 3}));
     }

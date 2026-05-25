@@ -20,7 +20,7 @@ int main() {
 
         bool threw = false;
         try {
-            endpoint.emit<Ping>(1);
+            endpoint.emit_direct<Ping>(1);
         } catch (const std::runtime_error&) {
             threw = true;
         }

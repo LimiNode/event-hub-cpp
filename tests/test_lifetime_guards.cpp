@@ -19,7 +19,7 @@ int main() {
 
         endpoint.close();
         endpoint.close();
-        bus.emit<Ping>(1);
+        bus.emit_direct<Ping>(1);
 
         EVENT_HUB_TEST_CHECK(endpoint.is_closed());
         EVENT_HUB_TEST_CHECK(calls == 0);
@@ -47,7 +47,7 @@ int main() {
         });
 
         std::thread dispatcher([&bus] {
-            bus.emit<Ping>(1);
+            bus.emit_direct<Ping>(1);
         });
 
         require_ready(entered);
@@ -82,7 +82,7 @@ int main() {
             });
 
         std::thread dispatcher([&bus] {
-            bus.emit<Ping>(1);
+            bus.emit_direct<Ping>(1);
         });
 
         require_ready(entered);
@@ -113,7 +113,7 @@ int main() {
             });
 
         std::thread dispatcher([&bus] {
-            bus.emit<Ping>(1);
+            bus.emit_direct<Ping>(1);
         });
 
         require_ready(entered);
@@ -141,7 +141,7 @@ int main() {
         module->start(entered_promise, release);
 
         std::thread dispatcher([&bus] {
-            bus.emit<Ping>(1);
+            bus.emit_direct<Ping>(1);
         });
 
         require_ready(entered);

@@ -14,7 +14,7 @@
 ## Overview
 
 `event-hub-cpp` is a lightweight C++ event bus for modular applications. It
-provides typed events, RAII-owned subscriptions, synchronous dispatch, queued
+provides typed events, RAII-owned subscriptions, direct dispatch, queued
 processing, awaiters, and basic cancellation primitives.
 
 The library is useful when modules need to publish commands, notifications, or
@@ -25,7 +25,7 @@ Key characteristics:
 - Typed event contracts with callbacks such as `void(const MyEvent&)`.
 - `EventEndpoint` owns subscriptions and unsubscribes automatically.
 - `EventNode` offers a protected endpoint-like API for listener-style modules.
-- `emit<T>()` dispatches synchronously.
+- `emit_direct<T>()` dispatches synchronously on the caller thread.
 - `post<T>()` queues work for an explicit `process()` point.
 - `subscribe<T>(DeliveryPolicy, ...)` makes callback thread affinity explicit;
   `subscribe_any<T>()` keeps the compatibility "both" behavior.
@@ -73,7 +73,7 @@ See [docs/project-structure.md](docs/project-structure.md) for the full guide.
 | Header | Purpose |
 | --- | --- |
 | `<event_hub.hpp>` | Primary umbrella header for the dependency-free public API. |
-| `<event_hub/event_bus.hpp>` | Central bus, subscriptions, `emit`, `post`, and `process`. |
+| `<event_hub/event_bus.hpp>` | Central bus, subscriptions, `emit_direct`, `post`, and `process`. |
 | `<event_hub/event_endpoint.hpp>` | RAII module endpoint for subscriptions and awaiters. |
 | `<event_hub/event_node.hpp>` | Convenience base class for modules that own an endpoint and listen through `EventListener`. |
 | `<event_hub/event_awaiter.hpp>` | Awaiter implementation and `AwaitOptions`. |
@@ -115,7 +115,7 @@ int main() {
     endpoint.subscribe_direct<MyEvent>([](const MyEvent& event) {
         std::cout << event.message << '\n';
     });
-    endpoint.emit<MyEvent>("sent immediately");
+    endpoint.emit_direct<MyEvent>("sent immediately");
 }
 ```
 
@@ -140,7 +140,7 @@ public:
 
 `EventNode` is a convenience base for modules that want `EventListener`
 dispatch and RAII-owned subscriptions in one object. It owns an internal
-`EventEndpoint`, exposes `listen`, `subscribe`, `post`, `emit`, and
+`EventEndpoint`, exposes `listen`, `subscribe`, `post`, `emit_direct`, and
 `unsubscribe` only to derived classes, and closes the endpoint on destruction.
 
 ```cpp
@@ -204,11 +204,13 @@ auto stream = endpoint.await_each<MyEvent>([](const MyEvent& event) {
 stream->cancel();
 ```
 
-Timeouts and external cancellation are polled by `emit<T>()` and `process()`.
-Awaiters use queued delivery by default. Set
+Timeouts and external cancellation are polled at `emit_direct<T>()` and
+`process()` points, filtered by the awaiter's delivery policy. Awaiters use
+queued delivery by default, so event callbacks, timeout callbacks, and
+cancellation cleanup run only from `process()` unless delivery is changed. Set
 `options.set_delivery(event_hub::DeliveryPolicy::direct)` or
-`DeliveryPolicy::any` when an awaiter is intentionally allowed to complete from
-an `emit<T>()` caller thread.
+`DeliveryPolicy::any` only when an awaiter is intentionally allowed to complete
+from an `emit_direct<T>()` caller thread.
 
 ## TaskManager
 
@@ -332,7 +334,7 @@ calling `run()`, and do not mutate the source list while the loop is running.
 ## Exception Handling
 
 Without an exception handler, exceptions from event callbacks are rethrown from
-`emit<T>()` or `process()`. With a handler, dispatch reports callback
+`emit_direct<T>()` or `process()`. With a handler, dispatch reports callback
 exceptions and continues with the remaining callbacks and queued events:
 
 ```cpp
@@ -347,9 +349,9 @@ bus.set_exception_handler([](std::exception_ptr error) {
 });
 ```
 
-Exceptions from `AwaitOptions::on_timeout` never leave `poll_timeout() noexcept`.
-They are reported to the bus exception handler when one is set; otherwise they
-are ignored.
+Exceptions from `AwaitOptions::on_timeout` never leave
+`poll_timeout(source) noexcept`. They are reported to the bus exception handler
+when one is set; otherwise they are ignored.
 
 `TaskManager::set_exception_handler(...)` follows the same policy for task
 callbacks. Without a handler, `TaskManager::process()` rethrows after restoring
@@ -472,13 +474,13 @@ the vcpkg overlay port on Linux.
 
 ## Examples
 
-- [basic.cpp](examples/basic.cpp) - plain value events, subscribe, emit,
+- [basic.cpp](examples/basic.cpp) - plain value events, subscribe, emit_direct,
   post/process, targeted unsubscribe, pending count, and queue clearing.
 - [event_and_listener.cpp](examples/event_and_listener.cpp) - optional
   `event_hub::Event` inheritance, `EVENT_HUB_EVENT`, `EventListener`,
   `on_event()`, and `as_ref<T>()`.
 - [event_node.cpp](examples/event_node.cpp) - `EventNode` as a module base
-  with `listen`, protected `post`/`emit`, callback `subscribe`, and
+  with `listen`, protected `post`/`emit_direct`, callback `subscribe`, and
   unsubscribe/close behavior.
 - [await_and_cancel.cpp](examples/await_and_cancel.cpp) - `await_once()`,
   `await_each()`, manual awaiter cancellation, cancellation tokens, and timeout
@@ -513,19 +515,25 @@ the vcpkg overlay port on Linux.
 
 ## Dispatch And Threading
 
-`post<T>()` is safe to call from producer threads. `emit<T>()` and `process()`
+`post<T>()` is safe to call from producer threads. `emit_direct<T>()` and `process()`
 invoke matching callbacks on the calling thread. The bus copies the callback
 list before dispatch so handlers may subscribe or unsubscribe while handling an
 event.
 
 Subscription delivery policy controls which source can invoke a callback.
 `subscribe<T>(DeliveryPolicy::direct, ...)` and `subscribe_direct<T>(...)`
-accept only immediate `emit<T>()` delivery. `subscribe<T>(DeliveryPolicy::queued,
+accept only immediate `emit_direct<T>()` delivery. `subscribe<T>(DeliveryPolicy::queued,
 ...)` and `subscribe_queued<T>(...)` accept only queued `process()` delivery.
 `subscribe_any<T>(...)` keeps the compatibility `DeliveryPolicy::any` behavior.
 Use queued subscriptions for module state that assumes hub-thread or run-loop
 affinity; use direct subscriptions only for callbacks that are thread-safe and
 reentrancy-safe.
+
+`emit_direct<T>()` returns `DispatchResult` with the number of subscriptions
+matched for the event type, callbacks delivered, and subscribers skipped by
+delivery policy. `set_delivery_mismatch_handler(...)` installs an optional
+diagnostic hook for cases where a dispatch source skipped subscribers because
+their policy rejected it.
 
 `EventBus` and `TaskManager` do not own a thread and do not decide how long to
 sleep. When a non-owning `INotifier` is set, each successful `post()` calls
@@ -630,7 +638,7 @@ itself:
 The basic model is intentionally simple:
 
 - `post()` may be called from producer threads.
-- Prefer calling `process()`, `emit()`, `subscribe()`, and `unsubscribe()` from
+- Prefer calling `process()`, `emit_direct()`, `subscribe()`, and `unsubscribe()` from
   the application/event-loop thread.
 - `EventEndpoint::~EventEndpoint()` closes the endpoint, removes
   subscriptions, and prevents new guarded callbacks from starting.

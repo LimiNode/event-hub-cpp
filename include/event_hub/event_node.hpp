@@ -117,7 +117,7 @@ protected:
         return m_endpoint.subscribe_any<EventType>(*this);
     }
 
-    /// \brief Subscribe this node as EventListener to direct emit() delivery.
+    /// \brief Subscribe this node as EventListener to direct emit_direct() delivery.
     /// \tparam EventType Event type derived from event_hub::Event.
     /// \return Subscription id that can be used for targeted unsubscription.
     template <typename EventType>
@@ -163,7 +163,7 @@ protected:
             std::forward<Callback>(callback));
     }
 
-    /// \brief Subscribe to direct emit() delivery only.
+    /// \brief Subscribe to direct emit_direct() delivery only.
     template <typename EventType, typename Callback>
     SubscriptionId subscribe_direct(Callback&& callback) {
         return m_endpoint.subscribe_direct<EventType>(
@@ -213,7 +213,7 @@ protected:
             std::forward<Callback>(callback));
     }
 
-    /// \brief Subscribe to direct emit() delivery with a lifetime guard.
+    /// \brief Subscribe to direct emit_direct() delivery with a lifetime guard.
     template <typename EventType, typename Guard, typename Callback>
     SubscriptionId subscribe_direct(std::weak_ptr<Guard> guard,
                                     Callback&& callback) {
@@ -256,27 +256,30 @@ protected:
     /// \brief Dispatch an already constructed event synchronously.
     /// \tparam EventType Concrete event type.
     /// \param event Event object to dispatch.
+    /// \return Dispatch statistics for this event.
     /// \throws Any callback exception when no exception handler is configured
     /// on the bus.
     template <typename EventType>
-    void emit(const EventType& event) {
-        m_endpoint.emit<EventType>(event);
+    DispatchResult emit_direct(const EventType& event) {
+        return m_endpoint.emit_direct<EventType>(event);
     }
 
     /// \brief Dispatch an already constructed event synchronously.
     /// \tparam EventType Concrete event type.
     /// \param event Event object to dispatch.
+    /// \return Dispatch statistics for this event.
     /// \throws Any callback exception when no exception handler is configured
     /// on the bus.
     template <typename EventType>
-    void emit(EventType&& event) {
-        m_endpoint.emit<EventType>(std::move(event));
+    DispatchResult emit_direct(EventType&& event) {
+        return m_endpoint.emit_direct<EventType>(std::move(event));
     }
 
     /// \brief Construct and dispatch an event synchronously.
     /// \tparam EventType Concrete event type.
     /// \tparam Args Constructor argument types.
     /// \param args Arguments used to construct the event.
+    /// \return Dispatch statistics for this event.
     /// \throws Any callback exception when no exception handler is configured
     /// on the bus.
     template <typename EventType,
@@ -284,8 +287,8 @@ protected:
               typename std::enable_if<
                   !detail::IsSingleEventArgument<EventType, Args...>::value,
                   int>::type = 0>
-    void emit(Args&&... args) {
-        m_endpoint.emit<EventType>(std::forward<Args>(args)...);
+    DispatchResult emit_direct(Args&&... args) {
+        return m_endpoint.emit_direct<EventType>(std::forward<Args>(args)...);
     }
 
     /// \brief Queue an already constructed event for later processing.

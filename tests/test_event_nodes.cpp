@@ -66,7 +66,7 @@ int main() {
         CountingListener listener;
 
         endpoint.subscribe_direct<DerivedEvent>(listener);
-        endpoint.emit<DerivedEvent>(5);
+        endpoint.emit_direct<DerivedEvent>(5);
 
         EVENT_HUB_TEST_CHECK(listener.total == 5);
     }
@@ -77,7 +77,7 @@ int main() {
         CountingListener listener;
 
         endpoint.subscribe_queued<DerivedEvent>(listener);
-        endpoint.emit<DerivedEvent>(5);
+        endpoint.emit_direct<DerivedEvent>(5);
         EVENT_HUB_TEST_CHECK(listener.total == 0);
 
         endpoint.post<DerivedEvent>(7);
@@ -96,7 +96,7 @@ int main() {
             listener);
 
         listener_guard.reset();
-        endpoint.emit<DerivedEvent>(7);
+        endpoint.emit_direct<DerivedEvent>(7);
 
         EVENT_HUB_TEST_CHECK(listener.total == 0);
     }
@@ -127,7 +127,7 @@ int main() {
         PlainValueNode node(bus);
 
         node.start();
-        bus.emit<Ping>(2);
+        bus.emit_direct<Ping>(2);
         EVENT_HUB_TEST_CHECK(node.total == 2);
 
         node.publish(3);
@@ -135,7 +135,7 @@ int main() {
         EVENT_HUB_TEST_CHECK(node.total == 5);
 
         node.stop_one();
-        bus.emit<Ping>(4);
+        bus.emit_direct<Ping>(4);
         EVENT_HUB_TEST_CHECK(node.total == 5);
     }
 

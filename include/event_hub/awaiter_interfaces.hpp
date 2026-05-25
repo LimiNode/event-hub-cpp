@@ -5,7 +5,15 @@
 /// \file awaiter_interfaces.hpp
 /// \brief Interfaces for cancelable event awaiters.
 
+#include <cstdint>
+
 namespace event_hub {
+
+/// \brief Source that is currently polling or dispatching event callbacks.
+enum class DispatchSource : std::uint8_t {
+    direct, ///< Immediate caller-thread dispatch from emit_direct().
+    queued ///< Queued dispatch from process() or a run loop.
+};
 
 /// \class IAwaiter
 /// \brief Minimal cancelable awaiter handle.
@@ -32,12 +40,14 @@ public:
 /// \class IAwaiterEx
 /// \brief Awaiter interface with timeout and cancellation polling.
 ///
-/// EventBus polls this extended interface after emit() and process() so timeout
-/// and cancellation-token state can stop awaiters without a background thread.
+/// EventBus polls this extended interface after emit_direct() and process() so
+/// timeout and cancellation-token state can stop awaiters without a background
+/// thread.
 class IAwaiterEx : public IAwaiter {
 public:
     /// \brief Poll timeout and cancellation conditions.
-    virtual void poll_timeout() noexcept = 0;
+    /// \param source Dispatch source that reached the polling point.
+    virtual void poll_timeout(DispatchSource source) noexcept = 0;
 
     /// \brief Destroy the extended awaiter handle.
     ~IAwaiterEx() override = default;

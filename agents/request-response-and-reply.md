@@ -37,7 +37,7 @@ filtered by the same id, and posts the request event.
 
 Use `request_future<RequestEvent, ResultEvent>()` only when a future-based API
 is clearer for the caller. Remember that the library is passive: someone still
-must call `emit()` or `process()` to dispatch events and poll awaiter timeouts.
+must call `emit_direct()` or `process()` to dispatch events and poll awaiter timeouts.
 
 ## Custom Correlation Field
 

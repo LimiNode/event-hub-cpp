@@ -40,12 +40,13 @@ Avoid comments that repeat what a well-named function or type already says.
 ## Error And Callback Behavior
 
 Callbacks run on the dispatching thread. Without an exception handler, callback
-exceptions from dispatch are rethrown from `emit<T>()` or `process()`. With
+exceptions from dispatch are rethrown from `emit_direct<T>()` or `process()`. With
 `EventBus::set_exception_handler(...)`, dispatch reports callback exceptions to
 the handler and continues.
 
-Timeout callbacks run from `poll_timeout() noexcept`; their exceptions are
-reported to the bus exception handler when one is set and otherwise swallowed.
+Timeout callbacks run from `poll_timeout(source) noexcept` when the source is
+accepted by `AwaitOptions::delivery`; their exceptions are reported to the bus
+exception handler when one is set and otherwise swallowed.
 
 Task callbacks run on the thread that calls `TaskManager::process()`. Without
 an exception handler, task exceptions are rethrown after unstarted batch work is

@@ -29,7 +29,7 @@ Core vocabulary:
 - `Event` - optional base class for users who need runtime metadata or cloning.
 - `EventListener` - optional generic listener interface for `Event`-derived
   event types.
-- `DeliveryPolicy` - subscription contract for direct `emit()`, queued
+- `DeliveryPolicy` - subscription contract for direct `emit_direct()`, queued
   `process()`, or compatibility "any" delivery.
 - `EventAwaiter` - cancelable helper used by `await_once()` and `await_each()`.
 - `CancellationToken` and `CancellationSource` - basic cancellation primitives
@@ -110,7 +110,7 @@ Important design points:
   `listen_queued<EventType>()` and dispatch inside `on_event()` with
   `Event::as<T>()` or `Event::as_ref<T>()`.
 - `EventNode` owns an internal `EventEndpoint`; all subscription, `post`,
-  `emit`, and unsubscribe behavior must delegate to that endpoint.
+  `emit_direct`, and unsubscribe behavior must delegate to that endpoint.
 - `listen<T>(DeliveryPolicy)` is only for types derived from
   `event_hub::Event`. Keep the static assertion so misuse fails at compile time
   with a clear message.
@@ -209,12 +209,16 @@ explicitly changes the library's threading contract.
 
 ## Dispatch Rules
 
-- `emit<T>()` dispatches synchronously on the calling thread.
+- `emit_direct<T>()` dispatches synchronously on the calling thread.
 - `post<T>()` enqueues an event for later dispatch.
 - `subscribe<T>()` requires an explicit `DeliveryPolicy`.
 - `subscribe_any<T>()` uses `DeliveryPolicy::any` for backward compatibility.
-- `subscribe_direct<T>()` receives only `emit<T>()` delivery.
+- `subscribe_direct<T>()` receives only `emit_direct<T>()` delivery.
 - `subscribe_queued<T>()` receives only queued `process()` delivery.
+- `emit_direct<T>()` returns `DispatchResult` with matched, delivered, and
+  policy-skipped subscription counts.
+- `set_delivery_mismatch_handler(...)` reports dispatches that skipped
+  subscribers because their `DeliveryPolicy` rejected the source.
 - Prefer queued subscriptions for module state with hub-thread or run-loop
   affinity. Use direct subscriptions only when callbacks are thread-safe and
   reentrancy-safe.
@@ -227,9 +231,10 @@ explicitly changes the library's threading contract.
 - `EventEndpoint` unsubscribes and cancels its awaiters on destruction.
 - `EventEndpoint` subscriptions carry a lifetime guard; callbacks copied by an
   active dispatch are skipped when the guard has expired before callback start.
-- Awaiters use queued delivery by default. Set `AwaitOptions::delivery` to
-  `DeliveryPolicy::direct` or `DeliveryPolicy::any` only when the awaiter
-  callback may safely run from an `emit<T>()` caller thread.
+- Awaiters use queued delivery by default. `AwaitOptions::delivery` filters
+  event callbacks, timeout callbacks, and cancellation cleanup. Set it to
+  `DeliveryPolicy::direct` or `DeliveryPolicy::any` only when those paths may
+  safely run from an `emit_direct<T>()` caller thread.
 - `unsubscribe_all()` does not wait for callbacks that already started or
   already passed the guard check.
 - Modules that need strict object lifetime during callbacks should be owned by
@@ -317,9 +322,9 @@ editing public APIs, examples, or tests.
 
 Subscription storage and the async queue are protected by mutexes. `post<T>()`
 is safe to call from producer threads. Dispatch happens on the thread that calls
-`emit<T>()` or `process()`, filtered by each subscription's `DeliveryPolicy`.
+`emit_direct<T>()` or `process()`, filtered by each subscription's `DeliveryPolicy`.
 
-Prefer calling `process()`, `emit()`, `subscribe()`, and `unsubscribe()` from the
+Prefer calling `process()`, `emit_direct()`, `subscribe()`, and `unsubscribe()` from the
 application/event-loop thread unless the application provides its own stronger
 synchronization.
 

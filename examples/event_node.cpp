@@ -57,7 +57,7 @@ public:
     }
 
     void publish_immediate_token() {
-        emit<TokenFoundEvent>("sync-token", "memory");
+        emit_direct<TokenFoundEvent>("sync-token", "memory");
     }
 
     void publish_test_events() {

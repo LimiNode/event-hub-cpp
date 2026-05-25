@@ -24,7 +24,7 @@
 
 - Типизированные контракты событий с callback-ами вида `void(const MyEvent&)`.
 - `EventEndpoint` владеет подписками и автоматически отписывается.
-- `emit<T>()` отправляет событие синхронно.
+- `emit_direct<T>()` отправляет событие синхронно.
 - `post<T>()` кладет событие в очередь до явного `process()`.
 - Опциональный `TaskManager` кладет immediate, delayed, periodic и
   future-returning задачи в ту же модель явной обработки.
@@ -44,7 +44,7 @@
 | Заголовок | Назначение |
 | --- | --- |
 | `<event_hub.hpp>` | Основной общий заголовок для dependency-free публичного API. |
-| `<event_hub/event_bus.hpp>` | Центральная шина, подписки, `emit`, `post` и `process`. |
+| `<event_hub/event_bus.hpp>` | Центральная шина, подписки, `emit_direct`, `post` и `process`. |
 | `<event_hub/event_endpoint.hpp>` | RAII-точка подключения модуля к шине. |
 | `<event_hub/event_awaiter.hpp>` | Реализация awaiter-ов и `AwaitOptions`. |
 | `<event_hub/awaiter_interfaces.hpp>` | Интерфейсы cancelable awaiter-handle-ов. |
@@ -73,14 +73,19 @@ int main() {
     event_hub::EventBus bus;
     event_hub::EventEndpoint endpoint(bus);
 
-    endpoint.subscribe<MyEvent>([](const MyEvent& event) {
-        std::cout << event.message << '\n';
-    });
-
-    endpoint.emit<MyEvent>("sent immediately");
+    endpoint.subscribe<MyEvent>(
+        event_hub::DeliveryPolicy::queued,
+        [](const MyEvent& event) {
+            std::cout << event.message << '\n';
+        });
 
     endpoint.post<MyEvent>("sent from the queue");
     bus.process();
+
+    endpoint.subscribe_direct<MyEvent>([](const MyEvent& event) {
+        std::cout << event.message << '\n';
+    });
+    endpoint.emit_direct<MyEvent>("sent immediately");
 }
 ```
 
@@ -130,7 +135,7 @@ auto stream = endpoint.await_each<MyEvent>([](const MyEvent& event) {
 stream->cancel();
 ```
 
-Timeout-ы и внешняя отмена проверяются при вызовах `emit<T>()` и `process()`.
+Timeout-ы и внешняя отмена проверяются в точках `emit_direct<T>()` и `process()` с учетом `AwaitOptions::delivery`. По умолчанию awaiter-ы принимают queued delivery, поэтому event callback, timeout callback и cleanup отмены выполняются только из `process()`, если delivery явно не изменен.
 
 ## TaskManager
 
@@ -256,7 +261,7 @@ loop.run();
 ## Обработка Исключений
 
 Без exception handler-а исключения из event callback-ов пробрасываются из
-`emit<T>()` или `process()`. Если handler задан, dispatch передает ему
+`emit_direct<T>()` или `process()`. Если handler задан, dispatch передает ему
 исключения и продолжает выполнять остальные callback-и и queued events:
 
 ```cpp
@@ -272,7 +277,7 @@ bus.set_exception_handler([](std::exception_ptr error) {
 ```
 
 Исключения из `AwaitOptions::on_timeout` никогда не выходят из
-`poll_timeout() noexcept`. Они передаются в exception handler шины, если он
+`poll_timeout(source) noexcept`. Они передаются в exception handler шины, если он
 задан, иначе игнорируются.
 
 `TaskManager::set_exception_handler(...)` использует такую же политику для task
@@ -397,13 +402,13 @@ CI также проверяет подключение установленно
 
 ## Примеры
 
-- [basic.cpp](examples/basic.cpp) - plain value events, `subscribe`, `emit`,
+- [basic.cpp](examples/basic.cpp) - plain value events, `subscribe`, `emit_direct`,
   `post/process`, точечная отписка, pending count и очистка очереди.
 - [event_and_listener.cpp](examples/event_and_listener.cpp) - опциональное
   наследование от `event_hub::Event`, `EVENT_HUB_EVENT`, `EventListener`,
   `on_event()` и `as_ref<T>()`.
 - [event_node.cpp](examples/event_node.cpp) - `EventNode` как базовый класс
-  модуля с `listen`, защищенными `post`/`emit`, callback `subscribe` и
+  модуля с `listen`, защищенными `post`/`emit_direct`, callback `subscribe` и
   поведением unsubscribe/close.
 - [await_and_cancel.cpp](examples/await_and_cancel.cpp) - `await_once()`,
   `await_each()`, ручная отмена awaiter-а, cancellation tokens и timeout
@@ -438,10 +443,16 @@ CI также проверяет подключение установленно
 
 ## Dispatch И Потоки
 
-`post<T>()` можно вызывать из producer-потоков. `emit<T>()` и `process()`
+`post<T>()` можно вызывать из producer-потоков. `emit_direct<T>()` и `process()`
 вызывают callback-и в том потоке, где были вызваны сами методы. Перед dispatch
 шина копирует список callback-ов, поэтому handler может подписываться,
 отписываться, публиковать события или отменять awaiter-ы.
+
+`emit_direct<T>()` возвращает `DispatchResult` с числом подписок данного типа,
+реально вызванных callback-ов и подписчиков, пропущенных из-за delivery policy.
+`set_delivery_mismatch_handler(...)` задает необязательный диагностический hook
+для случаев, когда источник dispatch пропустил подписчиков из-за несовпадения
+policy.
 
 `EventBus` и `TaskManager` не владеют потоком и не решают, сколько спать. Если
 задан non-owning `INotifier`, каждый успешный `post()` вызывает `notify()` после
@@ -546,7 +557,7 @@ endpoint-а. Guard модуля через `weak_from_this()` защищает �
 Базовая модель намеренно простая:
 
 - `post()` можно вызывать из producer-потоков.
-- `process()`, `emit()`, `subscribe()` и `unsubscribe()` лучше вызывать из
+- `process()`, `emit_direct()`, `subscribe()` и `unsubscribe()` лучше вызывать из
   application/event-loop thread.
 - `EventEndpoint::~EventEndpoint()` закрывает endpoint, удаляет подписки и не
   дает новым guarded callback-ам стартовать.

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <thread>
+#include <typeindex>
 #include <vector>
 
 using namespace event_hub_test;
@@ -17,11 +18,17 @@ int main() {
                 sync_total += ping.value;
             });
 
-            endpoint.emit<Ping>(2);
+            const auto result = endpoint.emit_direct<Ping>(2);
+            EVENT_HUB_TEST_CHECK(result.matched == 1);
+            EVENT_HUB_TEST_CHECK(result.delivered == 1);
+            EVENT_HUB_TEST_CHECK(result.skipped == 0);
             EVENT_HUB_TEST_CHECK(sync_total == 2);
         }
 
-        bus.emit<Ping>(3);
+        const auto result = bus.emit_direct<Ping>(3);
+        EVENT_HUB_TEST_CHECK(result.matched == 0);
+        EVENT_HUB_TEST_CHECK(result.delivered == 0);
+        EVENT_HUB_TEST_CHECK(result.skipped == 0);
         EVENT_HUB_TEST_CHECK(sync_total == 2);
     }
 
@@ -31,6 +38,12 @@ int main() {
         int direct_total = 0;
         int queued_total = 0;
         int any_total = 0;
+        std::vector<event_hub::DeliveryMismatch> mismatches;
+
+        bus.set_delivery_mismatch_handler(
+            [&mismatches](const event_hub::DeliveryMismatch& mismatch) {
+                mismatches.push_back(mismatch);
+            });
 
         endpoint.subscribe_direct<Ping>([&direct_total](const Ping& ping) {
             direct_total += ping.value;
@@ -42,16 +55,31 @@ int main() {
             any_total += ping.value;
         });
 
-        endpoint.emit<Ping>(2);
+        const auto direct_result = endpoint.emit_direct<Ping>(2);
+        EVENT_HUB_TEST_CHECK(direct_result.matched == 3);
+        EVENT_HUB_TEST_CHECK(direct_result.delivered == 2);
+        EVENT_HUB_TEST_CHECK(direct_result.skipped == 1);
         EVENT_HUB_TEST_CHECK(direct_total == 2);
         EVENT_HUB_TEST_CHECK(queued_total == 0);
         EVENT_HUB_TEST_CHECK(any_total == 2);
+        EVENT_HUB_TEST_CHECK(mismatches.size() == 1);
+        EVENT_HUB_TEST_CHECK(mismatches[0].event_type ==
+                             std::type_index(typeid(Ping)));
+        EVENT_HUB_TEST_CHECK(mismatches[0].publisher_policy ==
+                             event_hub::DeliveryPolicy::direct);
+        EVENT_HUB_TEST_CHECK(mismatches[0].skipped_subscribers == 1);
 
         endpoint.post<Ping>(3);
         EVENT_HUB_TEST_CHECK(bus.process() == 1);
         EVENT_HUB_TEST_CHECK(direct_total == 2);
         EVENT_HUB_TEST_CHECK(queued_total == 3);
         EVENT_HUB_TEST_CHECK(any_total == 5);
+        EVENT_HUB_TEST_CHECK(mismatches.size() == 2);
+        EVENT_HUB_TEST_CHECK(mismatches[1].event_type ==
+                             std::type_index(typeid(Ping)));
+        EVENT_HUB_TEST_CHECK(mismatches[1].publisher_policy ==
+                             event_hub::DeliveryPolicy::queued);
+        EVENT_HUB_TEST_CHECK(mismatches[1].skipped_subscribers == 1);
     }
 
     {
@@ -68,8 +96,8 @@ int main() {
         });
 
         endpoint.unsubscribe<Ping>();
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Message>("still subscribed");
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Message>("still subscribed");
 
         EVENT_HUB_TEST_CHECK(ping_calls == 0);
         EVENT_HUB_TEST_CHECK(message_calls == 1);
@@ -85,7 +113,7 @@ int main() {
         });
 
         endpoint.unsubscribe(id);
-        endpoint.emit<Ping>(1);
+        endpoint.emit_direct<Ping>(1);
         EVENT_HUB_TEST_CHECK(calls == 0);
 
         endpoint.subscribe_direct<Ping>([&calls](const Ping&) {
@@ -96,8 +124,8 @@ int main() {
         });
 
         endpoint.unsubscribe_all();
-        endpoint.emit<Ping>(1);
-        endpoint.emit<Message>("ignored");
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Message>("ignored");
         EVENT_HUB_TEST_CHECK(calls == 0);
     }
 
@@ -113,11 +141,11 @@ int main() {
                 total += ping.value;
             });
 
-        bus.emit<Ping>(3);
+        bus.emit_direct<Ping>(3);
         EVENT_HUB_TEST_CHECK(total == 3);
 
         bus.unsubscribe(id);
-        bus.emit<Ping>(4);
+        bus.emit_direct<Ping>(4);
         EVENT_HUB_TEST_CHECK(total == 3);
 
         bus.subscribe<Ping>(
@@ -127,7 +155,7 @@ int main() {
                 total += ping.value;
             });
         bus.unsubscribe_all(&owner);
-        bus.emit<Ping>(5);
+        bus.emit_direct<Ping>(5);
         EVENT_HUB_TEST_CHECK(total == 3);
     }
 
@@ -142,7 +170,7 @@ int main() {
             });
 
         MoveOnly event(11);
-        endpoint.emit<MoveOnly>(event);
+        endpoint.emit_direct<MoveOnly>(event);
         EVENT_HUB_TEST_CHECK(move_only_total == 11);
     }
 

@@ -22,14 +22,15 @@ namespace event_hub {
 /// \brief Awaiter configuration options.
 ///
 /// Timeout and cancellation-token state are cooperative. They are polled by
-/// EventBus after emit() and process(), not by a background thread.
-/// Awaiters accept queued delivery by default; set delivery explicitly when an
-/// awaiter callback may run from an emit() caller thread.
+/// EventBus after emit_direct() and process(), not by a background thread.
+/// Awaiters accept queued delivery by default; set delivery explicitly when
+/// event callbacks, timeout callbacks, or cancellation cleanup may run from an
+/// emit_direct() caller thread.
 struct AwaitOptions {
     std::chrono::steady_clock::duration timeout{}; ///< Zero means no timeout.
     CancellationToken token{};                     ///< Empty means no token.
     DeliveryPolicy delivery{DeliveryPolicy::queued}; ///< Accepted event delivery source.
-    std::function<void()> on_timeout{};            ///< Called when timeout ends.
+    std::function<void()> on_timeout{};            ///< Called at an accepted poll point when timeout ends.
 
     /// \brief Create options with a timeout in milliseconds.
     static AwaitOptions timeout_ms(std::int64_t timeout_ms) {
@@ -158,8 +159,12 @@ public:
     /// \note Exceptions from on_timeout are reported to the bus exception
     /// handler when one is set; otherwise they are swallowed to preserve
     /// noexcept.
-    void poll_timeout() noexcept override {
+    void poll_timeout(DispatchSource source) noexcept override {
         if (!is_active()) {
+            return;
+        }
+
+        if (!EventBus::accepts_delivery(m_options.delivery, source)) {
             return;
         }
 

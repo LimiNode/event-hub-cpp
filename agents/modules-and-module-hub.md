@@ -122,7 +122,7 @@ When a module callback assumes hub-thread or run-loop affinity, subscribe with
 `subscribe_queued<T>(...)` or `listen_queued<T>()`. The base
 `subscribe<T>(DeliveryPolicy, ...)` requires an explicit policy; use
 `subscribe_any<T>()` only when the callback is thread-safe and reentrancy-safe
-for both direct `emit()` and queued `process()` delivery.
+for both direct `emit_direct()` and queued `process()` delivery.
 
 Use a module's `TaskManager` for private `void()` work that must run at explicit
 processing points. Heavy event handlers should enqueue tasks or post follow-up
