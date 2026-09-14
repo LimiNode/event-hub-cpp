@@ -12,8 +12,8 @@
 #endif
 
 #if EVENT_HUB_CPP_USE_TIME_SHIELD && EVENT_HUB_CPP_USE_TIME_SHIELD_NTP
-#include <time_shield/initialization.hpp>
-#include <time_shield/ntp_time_service.hpp>
+#include <time_shield/core/initialization.hpp>
+#include <time_shield/ntp/ntp_time_service.hpp>
 #endif
 
 int main() {
