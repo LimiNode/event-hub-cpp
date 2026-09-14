@@ -2,6 +2,8 @@
 
 include(CMakeFindDependencyMacro)
 
+find_dependency(Threads)
+
 if(@EVENT_HUB_CPP_CONFIG_USES_TIME_SHIELD@)
     find_dependency(TimeShield CONFIG)
 endif()

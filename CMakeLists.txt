@@ -7,6 +7,7 @@ project(event-hub-cpp
 )
 
 include(GNUInstallDirs)
+find_package(Threads REQUIRED)
 
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(EVENT_HUB_CPP_TOP_LEVEL ON)
@@ -34,6 +35,7 @@ add_library(event-hub-cpp::event-hub-cpp ALIAS event_hub_cpp)
 set_target_properties(event_hub_cpp PROPERTIES EXPORT_NAME event_hub)
 
 target_compile_features(event_hub_cpp INTERFACE cxx_std_17)
+target_link_libraries(event_hub_cpp INTERFACE Threads::Threads)
 target_include_directories(event_hub_cpp
     INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -187,5 +189,5 @@ install(FILES
 )
 install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/event-hub-cpp.pc
-    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pkgconfig
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )

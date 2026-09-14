@@ -18,9 +18,10 @@ namespace event_hub {
 /// EventBus calls notify() after new queued work is posted. Implementations
 /// decide how the application event loop should be woken.
 ///
-/// \warning EventBus stores notifier pointers non-owningly. The notifier must
-/// outlive every producer that can call EventBus::post(), or the caller must
-/// reset the bus notifier before destroying it.
+/// \warning EventBus and TaskManager store notifier pointers non-owningly. The
+/// notifier must outlive every producer that can call post()/submit(), and
+/// producers must be quiescent before reset_notifier() and destruction. Calling
+/// reset_notifier() does not wait for a producer that already loaded the pointer.
 class INotifier {
 public:
     /// \brief Destroy notifier interface.

@@ -5,4 +5,4 @@ Name: event-hub-cpp
 Description: Lightweight C++ event bus for modular applications
 Version: @PROJECT_VERSION@
 Cflags: -I${includedir}
-Libs:
+Libs: @CMAKE_THREAD_LIBS_INIT@

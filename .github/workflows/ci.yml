@@ -86,7 +86,7 @@ jobs:
         run: cmake --install build-ts-install --prefix install-ts
       - name: Configure install consumer with time-shield
         if: matrix.suite == 'time-shield-install-consumer'
-        run: cmake -S tests/install_consumer -B build-ts-consumer -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install-ts;${{ github.workspace }}/build-ts-install/external/time-shield-cpp" -DEVENT_HUB_CPP_INSTALL_CONSUMER_USE_CALENDAR=ON -DCMAKE_CXX_STANDARD=17
+        run: cmake -S tests/install_consumer -B build-ts-consumer -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install-ts" -DEVENT_HUB_CPP_INSTALL_CONSUMER_USE_CALENDAR=ON -DCMAKE_CXX_STANDARD=17
       - name: Build install consumer with time-shield
         if: matrix.suite == 'time-shield-install-consumer'
         run: cmake --build build-ts-consumer

@@ -5,9 +5,9 @@
 [![Язык](https://img.shields.io/badge/language-C%2B%2B17%2B-orange.svg)](CMakeLists.txt)
 [![Header only](https://img.shields.io/badge/header--only-yes-brightgreen.svg)](include/event_hub.hpp)
 [![Пакеты](https://img.shields.io/badge/packages-CMake%20%7C%20pkg--config%20%7C%20vcpkg%20overlay-6f42c1.svg)](#установка)
-![CI Windows](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=Windows&logo=windows)
-![CI Linux](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=Linux&logo=linux)
-![CI macOS](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=macOS&logo=apple)
+![CI Windows](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=Windows&logo=windows)
+![CI Linux](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=Linux&logo=linux)
+![CI macOS](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=macOS&logo=apple)
 
 [Read in English](README.md)
 
@@ -326,7 +326,7 @@ target_link_libraries(app PRIVATE event_hub::event_hub)
 Добавьте репозиторий как subdirectory и подключите interface target:
 
 ```bash
-git submodule add https://github.com/NewYaroslav/event-hub-cpp external/event-hub-cpp
+git submodule add https://github.com/LimiNode/event-hub-cpp external/event-hub-cpp
 ```
 
 ```cmake
