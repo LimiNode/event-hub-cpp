@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ asan-ubsan, time-shield-calendar, time-shield-install-consumer, vcpkg-install ]
+        suite: [ asan-ubsan, time-shield-calendar, time-shield-calendar-ntp, time-shield-install-consumer, vcpkg-install ]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,6 +74,16 @@ jobs:
       - name: Test (time-shield-calendar)
         if: matrix.suite == 'time-shield-calendar'
         run: ctest --test-dir build-calendar --output-on-failure --timeout 30
+
+      - name: Configure (time-shield-calendar-ntp)
+        if: matrix.suite == 'time-shield-calendar-ntp'
+        run: cmake -S . -B build-calendar-ntp -DEVENT_HUB_CPP_BUILD_TESTS=ON -DEVENT_HUB_CPP_BUILD_EXAMPLES=ON -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DEVENT_HUB_CPP_USE_TIME_SHIELD_NTP=ON -DCMAKE_CXX_STANDARD=17
+      - name: Build (time-shield-calendar-ntp)
+        if: matrix.suite == 'time-shield-calendar-ntp'
+        run: cmake --build build-calendar-ntp
+      - name: Test (time-shield-calendar-ntp)
+        if: matrix.suite == 'time-shield-calendar-ntp'
+        run: ctest --test-dir build-calendar-ntp --output-on-failure --timeout 30
 
       - name: Configure package with time-shield
         if: matrix.suite == 'time-shield-install-consumer'
@@ -122,6 +132,8 @@ jobs:
             build/Testing/Temporary/LastTest.log
             build-calendar/CMakeFiles/CMakeOutput.log
             build-calendar/Testing/Temporary/LastTest.log
+            build-calendar-ntp/CMakeFiles/CMakeOutput.log
+            build-calendar-ntp/Testing/Temporary/LastTest.log
             build-ts-install/CMakeFiles/CMakeOutput.log
             build-ts-install/Testing/Temporary/LastTest.log
             build-ts-consumer/CMakeFiles/CMakeOutput.log
