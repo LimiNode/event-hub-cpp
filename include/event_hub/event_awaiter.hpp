@@ -15,6 +15,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace event_hub {
@@ -31,6 +32,7 @@ struct AwaitOptions {
     CancellationToken token{};                     ///< Empty means no token.
     DeliveryPolicy delivery{DeliveryPolicy::queued}; ///< Accepted event delivery source.
     std::function<void()> on_timeout{};            ///< Called at an accepted poll point when timeout ends.
+    std::function<void()> on_cancel{};             ///< Called when the cancellation token ends the awaiter.
 
     /// \brief Create options with a timeout in milliseconds.
     static AwaitOptions timeout_ms(std::int64_t timeout_ms) {
@@ -171,6 +173,7 @@ public:
         if (m_options.token && m_options.token.is_cancelled()) {
             auto hold = this->shared_from_this();
             cancel();
+            invoke_on_cancel();
             return;
         }
 
@@ -186,6 +189,15 @@ public:
                 }
             }
         }
+    }
+
+    /// \brief Return the configured timeout deadline while active.
+    std::optional<std::chrono::steady_clock::time_point>
+    next_deadline() const noexcept override {
+        if (!is_active() || !m_has_deadline) {
+            return std::nullopt;
+        }
+        return m_deadline;
     }
 
     /// \brief Destroy awaiter and cancel its subscription.
@@ -246,7 +258,9 @@ private:
         }
 
         if (m_options.token && m_options.token.is_cancelled()) {
+            auto hold = this->shared_from_this();
             cancel();
+            invoke_on_cancel();
             return;
         }
 
@@ -262,6 +276,19 @@ private:
 
         if (m_callback) {
             m_callback(event);
+        }
+    }
+
+    void invoke_on_cancel() noexcept {
+        auto on_cancel = std::move(m_options.on_cancel);
+        if (!on_cancel) {
+            return;
+        }
+
+        try {
+            on_cancel();
+        } catch (...) {
+            m_bus.report_exception_noexcept(std::current_exception());
         }
     }
 

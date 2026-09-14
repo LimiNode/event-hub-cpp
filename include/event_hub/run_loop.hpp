@@ -221,6 +221,19 @@ private:
         std::optional<Duration> best;
         const auto now = Clock::now();
 
+        for (auto* bus : m_buses) {
+            const auto deadline = bus->next_awaiter_deadline();
+            if (!deadline) {
+                continue;
+            }
+
+            const auto wait =
+                *deadline <= now ? Duration::zero() : (*deadline - now);
+            if (!best || wait < *best) {
+                best = wait;
+            }
+        }
+
         for (auto* tasks : m_task_managers) {
             if (tasks->has_ready()) {
                 return Duration::zero();

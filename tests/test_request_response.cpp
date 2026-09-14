@@ -216,6 +216,58 @@ void test_request_future_timeout() {
     }
 }
 
+void test_request_future_cancellation() {
+    event_hub::EventBus bus;
+    event_hub::EventEndpoint client(bus);
+    event_hub::CancellationSource source;
+
+    EchoRequest event;
+    event.value = 3;
+    auto options = event_hub::AwaitOptions{};
+    options.token = source.token();
+
+    auto future = client.request_future<EchoRequest, EchoResult>(
+        event, std::move(options));
+    source.cancel();
+
+    // Cancellation is cooperative and observed at the bus poll point.
+    (void)bus.process();
+    expect(future.wait_for(std::chrono::milliseconds(0)) ==
+               std::future_status::ready,
+           "future must become ready after cancellation is polled");
+
+    try {
+        (void)future.get();
+        throw std::runtime_error("request_future must throw after cancellation");
+    } catch (const event_hub::RequestCancelledError& error) {
+        expect(error.request_id() != event_hub::invalid_request_id,
+               "cancelled request id must be valid");
+    }
+}
+
+void test_request_operations_after_close() {
+    event_hub::EventBus bus;
+    event_hub::EventEndpoint client(bus);
+    client.close();
+
+    EchoRequest event;
+    event.value = 1;
+    auto future = client.request_future<EchoRequest, EchoResult>(event);
+    expect(future.wait_for(std::chrono::milliseconds(0)) ==
+               std::future_status::ready,
+           "closed endpoint future must be ready");
+    try {
+        (void)future.get();
+        throw std::runtime_error("closed endpoint future must throw");
+    } catch (const event_hub::EventEndpointClosedError&) {
+    }
+
+    expect(client.request<EchoRequest, EchoResult>(
+                event, [](const EchoResult&) {}) ==
+               event_hub::invalid_request_id,
+           "request on a closed endpoint must be rejected");
+}
+
 void test_request_traits_custom_field() {
     event_hub::EventBus bus;
     event_hub::EventEndpoint client(bus);
@@ -319,6 +371,8 @@ int main() {
     test_request_callback();
     test_request_future();
     test_request_future_timeout();
+    test_request_future_cancellation();
+    test_request_operations_after_close();
     test_request_traits_custom_field();
     test_reply_callback_in_event();
     test_event_node_request_helpers();

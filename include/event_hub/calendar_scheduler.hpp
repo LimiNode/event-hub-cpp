@@ -588,9 +588,18 @@ private:
                                    std::shared_ptr<State> state,
                                    time_shield::ts_ms_t previous_planned,
                                    time_shield::ts_ms_t observed_now) {
-        auto next = state->next_time_provider(state->options,
-                                              previous_planned,
-                                              observed_now);
+        std::optional<time_shield::ts_ms_t> next;
+        try {
+            next = state->next_time_provider(state->options,
+                                             previous_planned,
+                                             observed_now);
+        } catch (...) {
+            // A provider failure terminates this rule. Keep the exception
+            // visible to TaskManager's normal error handling, but do not
+            // leave an orphaned rule in Core with no queued task.
+            mark_completed(core, state);
+            throw;
+        }
         if (!next) {
             mark_completed(core, state);
             return;
@@ -608,9 +617,15 @@ private:
                 CalendarOverlapPolicy::queue_one_after_current) {
                 immediate = true;
             } else {
-                auto future = state->next_time_provider(state->options,
-                                                        observed_now,
-                                                        observed_now);
+                std::optional<time_shield::ts_ms_t> future;
+                try {
+                    future = state->next_time_provider(state->options,
+                                                       observed_now,
+                                                       observed_now);
+                } catch (...) {
+                    mark_completed(core, state);
+                    throw;
+                }
                 if (!future) {
                     mark_completed(core, state);
                     return;

@@ -291,9 +291,12 @@ protected:
     /// \brief Queue an already constructed event for later processing.
     /// \tparam EventType Concrete event type.
     /// \param event Event object to queue.
-    template <typename EventType>
+    template <typename EventType,
+              typename std::enable_if<
+                  !std::is_lvalue_reference<EventType>::value,
+                  int>::type = 0>
     void post(EventType&& event) {
-        m_endpoint.post<EventType>(std::move(event));
+        m_endpoint.post<EventType>(std::forward<EventType>(event));
     }
 
     /// \brief Construct and queue an event for later processing.

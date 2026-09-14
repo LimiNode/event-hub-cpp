@@ -152,6 +152,25 @@ int main() {
 
     {
         event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        endpoint.close();
+
+        EVENT_HUB_TEST_CHECK(endpoint.subscribe_queued<Ping>(
+                                 [](const Ping&) {}) == 0U);
+        EVENT_HUB_TEST_CHECK(!endpoint.await_once<Ping>(
+            [](const Ping&) {}));
+        EVENT_HUB_TEST_CHECK(!endpoint.await_each<Ping>(
+            [](const Ping&) {}));
+
+        endpoint.post<Ping>(1);
+        const auto result = endpoint.emit_direct<Ping>(1);
+        EVENT_HUB_TEST_CHECK(result.matched == 0U);
+        EVENT_HUB_TEST_CHECK(result.delivered == 0U);
+        EVENT_HUB_TEST_CHECK(bus.process() == 0U);
+    }
+
+    {
+        event_hub::EventBus bus;
         int direct_total = 0;
         event_hub::AwaitOptions direct_options;
         direct_options.set_delivery(event_hub::DeliveryPolicy::direct);

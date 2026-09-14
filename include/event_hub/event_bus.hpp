@@ -13,11 +13,13 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <type_traits>
 #include <typeindex>
@@ -485,9 +487,14 @@ public:
     ///
     /// The later process() call invokes DeliveryPolicy::queued and
     /// DeliveryPolicy::any subscriptions on the processing thread.
-    template <typename EventType>
+    template <typename EventType,
+              typename std::enable_if<
+                  !std::is_lvalue_reference<EventType>::value,
+                  int>::type = 0>
     void post(EventType&& event) {
-        enqueue<EventType>(std::make_shared<EventType>(std::move(event)));
+        using StoredEvent = typename std::decay<EventType>::type;
+        enqueue<StoredEvent>(
+            std::make_shared<StoredEvent>(std::forward<EventType>(event)));
     }
 
     /// \brief Construct and queue an event for later processing.
@@ -550,6 +557,26 @@ public:
     /// \return True when one or more queued events are pending.
     bool has_pending() const {
         return pending_count() != 0U;
+    }
+
+    /// \brief Return the earliest active awaiter timeout deadline, if any.
+    ///
+    /// Awaiters are passive and are polled by process()/emit_direct(). A
+    /// blocking loop can use this deadline to wake and invoke process() when
+    /// no event has been queued.
+    std::optional<std::chrono::steady_clock::time_point>
+    next_awaiter_deadline() const noexcept {
+        std::optional<std::chrono::steady_clock::time_point> best;
+        std::lock_guard<std::mutex> lock(m_awaiters_mutex);
+        for (const auto& weak : m_awaiters) {
+            if (auto awaiter = weak.lock()) {
+                const auto deadline = awaiter->next_deadline();
+                if (deadline && (!best || *deadline < *best)) {
+                    best = deadline;
+                }
+            }
+        }
+        return best;
     }
 
     /// \brief Drop queued events without dispatching them.

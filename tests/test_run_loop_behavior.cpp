@@ -104,5 +104,26 @@ int main() {
         EVENT_HUB_TEST_CHECK((messages == std::vector<std::string>{"first", "second"}));
     }
 
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        event_hub::TaskManager tasks;
+        event_hub::RunLoop loop;
+        bool timed_out = false;
+
+        auto options = event_hub::AwaitOptions::timeout_ms(20);
+        options.on_timeout = [&timed_out] { timed_out = true; };
+        endpoint.await_once<Message>([](const Message&) {}, std::move(options));
+
+        loop.add(bus);
+        loop.add(tasks);
+        tasks.post_after(std::chrono::milliseconds(100), [&loop] {
+            loop.request_stop();
+        });
+
+        loop.run();
+        EVENT_HUB_TEST_CHECK(timed_out);
+    }
+
     return 0;
 }

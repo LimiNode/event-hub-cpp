@@ -73,6 +73,31 @@ int main() {
     }
 
     {
+        // An already-constructed non-const lvalue must select the copying
+        // overload instead of attempting to instantiate make_shared<E&>.
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        int received = 0;
+        endpoint.subscribe_queued<Ping>([&received](const Ping& ping) {
+            received = ping.value;
+        });
+
+        Ping event{17};
+        bus.post(event);
+        event.value = 99;
+
+        EVENT_HUB_TEST_CHECK(bus.process() == 1);
+        EVENT_HUB_TEST_CHECK(received == 17);
+
+        Ping endpoint_event{23};
+        endpoint.post(endpoint_event);
+        endpoint_event.value = 101;
+
+        EVENT_HUB_TEST_CHECK(bus.process() == 1);
+        EVENT_HUB_TEST_CHECK(received == 23);
+    }
+
+    {
         event_hub::EventBus bus;
         event_hub::EventEndpoint endpoint(bus);
         std::vector<event_hub::DeliveryMismatch> mismatches;
