@@ -144,6 +144,14 @@ public:
         }
 
         request_worker_stop();
+        if (m_worker.joinable() &&
+            m_worker.get_id() == std::this_thread::get_id()) {
+            // A worker cannot join itself. Defer the entire teardown until
+            // the owning thread joins it; otherwise the remainder of the
+            // current TaskManager batch could run against torn-down state.
+            m_stopping.store(false, std::memory_order_release);
+            return;
+        }
         join_worker_noexcept();
 
         if (m_initialized.load(std::memory_order_acquire)) {

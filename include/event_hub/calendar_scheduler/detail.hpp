@@ -35,6 +35,7 @@ struct State {
     TaskId scheduled_task_id = 0;
     time_shield::ts_ms_t planned_utc_ms = 0;
     std::uint64_t schedule_generation = 0;
+    std::uint64_t started_generation = 0;
     std::uint64_t run_count = 0;
     bool cancelled = false;
 };

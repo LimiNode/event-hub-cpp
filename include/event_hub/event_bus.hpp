@@ -100,7 +100,9 @@ public:
     /// \brief Set a non-owning notifier called after events are queued.
     ///
     /// The caller must keep the notifier alive while producer threads may call
-    /// post(), or call reset_notifier() before destroying it.
+    /// post(). Producers must be quiescent before reset_notifier() or notifier
+    /// destruction; reset_notifier() does not wait for a producer that already
+    /// loaded the pointer.
     ///
     /// \param notifier Non-owning notifier pointer, or null to disable
     /// notifications.
@@ -122,7 +124,10 @@ public:
     /// fail-fast dispatch behavior.
     void set_exception_handler(ExceptionHandler handler) {
         std::lock_guard<std::mutex> lock(m_exception_handler_mutex);
-        m_exception_handler = std::move(handler);
+        m_exception_handler = handler
+                                  ? std::make_shared<ExceptionHandler>(
+                                        std::move(handler))
+                                  : nullptr;
     }
 
     /// \brief Set a handler for delivery-policy mismatches.
@@ -140,7 +145,10 @@ public:
         DeliveryMismatchHandler handler,
         DeliveryMismatchReportMode mode = DeliveryMismatchReportMode::no_delivery) {
         std::lock_guard<std::mutex> lock(m_delivery_mismatch_handler_mutex);
-        m_delivery_mismatch_handler = std::move(handler);
+        m_delivery_mismatch_handler = handler
+                                          ? std::make_shared<DeliveryMismatchHandler>(
+                                                std::move(handler))
+                                          : nullptr;
         m_delivery_mismatch_report_mode = mode;
     }
 
@@ -597,7 +605,7 @@ private:
     };
 
     struct DeliveryMismatchHandlerSnapshot {
-        DeliveryMismatchHandler handler;
+        std::shared_ptr<DeliveryMismatchHandler> handler;
         DeliveryMismatchReportMode mode = DeliveryMismatchReportMode::no_delivery;
     };
 
@@ -679,7 +687,7 @@ private:
         }
 
         try {
-            snapshot.handler(
+            (*snapshot.handler)(
                 DeliveryMismatch{type, source_policy(source), result.skipped});
         } catch (...) {
             report_exception_noexcept(std::current_exception());
@@ -735,7 +743,7 @@ private:
         return m_next_subscription_id.fetch_add(1, std::memory_order_relaxed);
     }
 
-    ExceptionHandler exception_handler() const {
+    std::shared_ptr<ExceptionHandler> exception_handler() const {
         std::lock_guard<std::mutex> lock(m_exception_handler_mutex);
         return m_exception_handler;
     }
@@ -752,7 +760,7 @@ private:
             return false;
         }
 
-        handler(std::move(exception));
+        (*handler)(std::move(exception));
         return true;
     }
 
@@ -802,10 +810,10 @@ private:
     mutable std::vector<std::weak_ptr<IAwaiterEx>> m_awaiters;
 
     mutable std::mutex m_exception_handler_mutex;
-    ExceptionHandler m_exception_handler;
+    std::shared_ptr<ExceptionHandler> m_exception_handler;
 
     mutable std::mutex m_delivery_mismatch_handler_mutex;
-    DeliveryMismatchHandler m_delivery_mismatch_handler;
+    std::shared_ptr<DeliveryMismatchHandler> m_delivery_mismatch_handler;
     DeliveryMismatchReportMode m_delivery_mismatch_report_mode =
         DeliveryMismatchReportMode::no_delivery;
 
