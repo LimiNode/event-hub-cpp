@@ -116,7 +116,7 @@ jobs:
 
       - name: Install package for pkg-config consumer
         if: matrix.suite == 'pkg-config-install'
-        run: cmake -S . -B build-pkg -DEVENT_HUB_CPP_BUILD_TESTS=OFF -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DCMAKE_INSTALL_LIBDIR=lib/test-triplet -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-pkg && cmake --install build-pkg
+        run: cmake -S . -B build-pkg -DEVENT_HUB_CPP_BUILD_TESTS=OFF -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_LIBDIR=lib/test-triplet -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-pkg && cmake --install build-pkg
       - name: Build and run pkg-config consumer
         if: matrix.suite == 'pkg-config-install'
         run: |
