@@ -100,7 +100,9 @@ public:
     /// \brief Set a non-owning notifier called after events are queued.
     ///
     /// The caller must keep the notifier alive while producer threads may call
-    /// post(), or call reset_notifier() before destroying it.
+    /// post(). Producers must be quiescent before reset_notifier() or notifier
+    /// destruction; reset_notifier() does not wait for a producer that already
+    /// loaded the pointer.
     ///
     /// \param notifier Non-owning notifier pointer, or null to disable
     /// notifications.
