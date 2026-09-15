@@ -56,6 +56,51 @@
 | `<event_hub/task.hpp>` | Move-only `Task`, `TaskContext`, `TaskId`, приоритет, periodic policy и опции задач. |
 | `<event_hub/task_manager.hpp>` | Пассивный `TaskManager` для immediate, delayed и periodic задач. |
 | `<event_hub/calendar_scheduler.hpp>` | Опциональный calendar scheduler на `time-shield-cpp` для daily/weekly/monthly правил. |
+| `<event_hub/request.hpp>` | Типы и traits для request/result корреляции через `RequestId`. |
+| `<event_hub/module.hpp>` | Базовый `Module`: жизненный цикл, собственный `TaskManager` и режим выполнения. |
+| `<event_hub/module_hub.hpp>` | `ModuleHub` с общей шиной, регистрацией модулей и пассивным process/run loop. |
+
+## Модули и ModuleHub
+
+`Module` объединяет `EventNode` и собственный `TaskManager`. Жизненный цикл
+явный: `initialize()`, `process()` и `shutdown()`. По умолчанию модуль
+обрабатывается inline в `ModuleHub`; также доступны режимы private thread и
+manual для интеграции с внешним циклом.
+
+`ModuleHub` владеет одной общей `EventBus` и зарегистрированными модулями.
+Он остаётся пассивным источником работы: приложение может вызывать
+`process()`/`process_once()`, использовать `has_pending()` и `next_deadline()`,
+либо запустить удобные обёртки `run()` и `start()`.
+
+## Request/result API
+
+Для запроса, которому нужен один конкретный результат, используйте парные
+события с общим `event_hub::RequestId` и helper
+`request<RequestEvent, ResultEvent>()`:
+
+```cpp
+struct CheckRequest {
+    event_hub::RequestId request_id = event_hub::invalid_request_id;
+    int value = 0;
+};
+
+struct CheckResult {
+    event_hub::RequestId request_id = event_hub::invalid_request_id;
+    bool ok = false;
+};
+
+endpoint.request<CheckRequest, CheckResult>(
+    CheckRequest{event_hub::invalid_request_id, 42},
+    [](const CheckResult& result) {
+        // result.request_id совпадает с request_id запроса
+    });
+```
+
+`request_future<RequestEvent, ResultEvent>()` возвращает future для
+future-based кода. Шина остаётся пассивной: для доставки запроса и результата
+нужно вызывать `process()` (обычно два раза, поскольку результат ставится в
+очередь обработчиком запроса). Если поле корреляции называется иначе,
+специализируйте `event_hub::RequestTraits<T>` в `request.hpp`.
 
 ## Быстрый Старт
 
