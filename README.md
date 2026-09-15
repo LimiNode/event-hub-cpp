@@ -586,6 +586,12 @@ The notifier is non-owning. Keep it alive until all producer threads have
 stopped, then call `reset_notifier()` before destroying it; resetting the atomic
 pointer alone does not wait for a producer that already loaded the old pointer.
 
+Threading contract: `EventBus::post()` and the `TaskManager` producer APIs
+(`post`, `submit`, delayed/periodic submission, and `cancel`) are safe from
+producer threads. `process()`, `emit_direct()`, subscribe/unsubscribe,
+awaiter/request creation, endpoint close, and lifecycle operations are
+single-consumer operations; synchronize them in the owning event-loop thread.
+
 ```cpp
 event_hub::SyncNotifier notifier;
 event_hub::EventBus bus;
@@ -684,8 +690,10 @@ itself:
 The basic model is intentionally simple:
 
 - `post()` may be called from producer threads.
-- Prefer calling `process()`, `emit_direct()`, `subscribe()`, and `unsubscribe()` from
-  the application/event-loop thread.
+- Producer-safe operations include `post()` and task submission/cancellation APIs.
+  `process()`, `emit_direct()`, subscription/lifecycle operations, and endpoint
+  creation/close are single-consumer operations and should be confined to the
+  application/event-loop thread.
 - `EventEndpoint::~EventEndpoint()` closes the endpoint, removes
   subscriptions, and prevents new guarded callbacks from starting.
 - `EventEndpoint::~EventEndpoint()` does not wait for callbacks that already

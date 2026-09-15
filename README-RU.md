@@ -499,6 +499,21 @@ CI также проверяет подключение установленно
 
 ## Dispatch И Потоки
 
+Явный threading contract библиотеки:
+
+- Из producer-потоков безопасны `post()` и API постановки/отмены задач
+  `TaskManager` (`post`, `submit`, delayed/periodic submission, `cancel`).
+- `process()`, `emit_direct()`, создание и удаление подписок/awaiter-ов и
+  request-ов, `EventEndpoint::close()` и lifecycle-операции являются
+  single-consumer API. Вызывайте их из event-loop потока либо обеспечьте
+  внешнюю синхронизацию.
+
+Non-owning notifier должен жить до остановки всех producer-потоков. Перед его
+уничтожением сначала дождитесь quiescence producer-ов, затем вызовите
+`reset_notifier()`: сброс атомарного указателя не ждёт producer, который уже
+успел загрузить старый указатель. Деструктор `RunLoop` следует этому правилу,
+поэтому его источники также должны быть quiescent.
+
 `post<T>()` можно вызывать из producer-потоков. `emit_direct<T>()` и `process()`
 вызывают callback-и в том потоке, где были вызваны сами методы. Перед dispatch
 шина копирует список callback-ов, поэтому handler может подписываться,

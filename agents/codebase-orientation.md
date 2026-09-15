@@ -328,9 +328,11 @@ Subscription storage and the async queue are protected by mutexes. `post<T>()`
 is safe to call from producer threads. Dispatch happens on the thread that calls
 `emit_direct<T>()` or `process()`, filtered by each subscription's `DeliveryPolicy`.
 
-Prefer calling `process()`, `emit_direct()`, `subscribe()`, and `unsubscribe()` from the
-application/event-loop thread unless the application provides its own stronger
-synchronization.
+Producer-safe operations are `post<T>()` and the TaskManager submission and
+cancellation APIs. `process()`, `emit_direct()`, subscribe/unsubscribe,
+awaiter/request creation, endpoint close, and lifecycle operations are
+single-consumer operations; keep them on the application/event-loop thread or
+provide stronger external synchronization.
 
 `EventBus` and `TaskManager` must not own threads or sleep on their own. For
 efficient external loops, attach a non-owning `INotifier` with
