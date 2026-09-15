@@ -460,7 +460,6 @@ private:
             TaskManager::Clock::now() + std::chrono::milliseconds(delay_ms);
 
         std::uint64_t generation = 0;
-        bool publish_scheduled = true;
         {
             std::lock_guard<std::mutex> lock(core->mutex);
             auto it = core->tasks.find(state->id);
@@ -498,33 +497,30 @@ private:
 
         {
             std::lock_guard<std::mutex> lock(core->mutex);
+            // A concurrent consumer may already have run this generation and
+            // advanced the schedule (or completed it). This is a successful
+            // publication, not a failure of the rule being scheduled.
+            if (state->schedule_generation != generation ||
+                state->started_generation == generation) {
+                return true;
+            }
+
             auto it = core->tasks.find(state->id);
             if (it == core->tasks.end() || state->cancelled || core->closed) {
                 core->manager->cancel(task_id);
                 return false;
             }
 
-            // A concurrent consumer may already have run this generation and
-            // advanced the schedule. That is a successful supersession, not
-            // a failure of the rule being scheduled.
-            if (state->schedule_generation != generation) {
-                return true;
-            }
-
-            publish_scheduled = state->started_generation != generation;
-
             if (state->scheduled_task_id == 0) {
                 state->scheduled_task_id = task_id;
             }
         }
 
-        if (publish_scheduled) {
-            emit(state,
-                 CalendarObserverEvent::scheduled,
-                 planned_utc_ms,
-                 observed_now,
-                 task_id);
-        }
+        emit(state,
+             CalendarObserverEvent::scheduled,
+             planned_utc_ms,
+             observed_now,
+             task_id);
         return true;
     }
 
