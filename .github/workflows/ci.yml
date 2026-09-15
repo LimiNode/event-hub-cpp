@@ -121,6 +121,7 @@ jobs:
         if: matrix.suite == 'pkg-config-install'
         run: |
           export PKG_CONFIG_PATH="${{ github.workspace }}/install-pkg/lib/test-triplet/pkgconfig"
+          export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
           c++ -std=c++17 examples/basic.cpp $(pkg-config --cflags --libs event-hub-cpp) -o pkg-config-consumer
           ./pkg-config-consumer
 
