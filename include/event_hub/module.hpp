@@ -139,18 +139,27 @@ public:
             join_worker_noexcept();
             return;
         }
-        if (m_stopping.exchange(true, std::memory_order_acq_rel)) {
-            return;
-        }
+        const bool deferred =
+            m_shutdown_deferred.load(std::memory_order_acquire);
+        if (!deferred) {
+            if (m_stopping.exchange(true, std::memory_order_acq_rel)) {
+                return;
+            }
 
-        request_worker_stop();
-        if (m_worker.joinable() &&
-            m_worker.get_id() == std::this_thread::get_id()) {
-            // A worker cannot join itself. Defer the entire teardown until
-            // the owning thread joins it; otherwise the remainder of the
-            // current TaskManager batch could run against torn-down state.
-            m_stopping.store(false, std::memory_order_release);
+            request_worker_stop();
+            if (m_worker.joinable() &&
+                m_worker.get_id() == std::this_thread::get_id()) {
+                // A worker cannot join itself. Defer the entire teardown until
+                // the owning thread joins it; otherwise the remainder of the
+                // current TaskManager batch could run against torn-down state.
+                m_shutdown_deferred.store(true, std::memory_order_release);
+                return;
+            }
+        } else if (m_worker.joinable() &&
+                   m_worker.get_id() == std::this_thread::get_id()) {
             return;
+        } else {
+            m_shutdown_deferred.store(false, std::memory_order_release);
         }
         join_worker_noexcept();
 
@@ -337,6 +346,7 @@ private:
     std::atomic_bool m_initialized{false};
     std::atomic_bool m_stopping{false};
     std::atomic_bool m_stopped{false};
+    std::atomic_bool m_shutdown_deferred{false};
 
     SyncNotifier m_worker_notifier;
     std::thread m_worker;
