@@ -119,7 +119,10 @@ jobs:
         run: cmake -S . -B build-pkg -DEVENT_HUB_CPP_BUILD_TESTS=OFF -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DCMAKE_INSTALL_LIBDIR=lib/test-triplet -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-pkg && cmake --install build-pkg
       - name: Build and run pkg-config consumer
         if: matrix.suite == 'pkg-config-install'
-        run: PKG_CONFIG_PATH=${{ github.workspace }}/install-pkg/lib/test-triplet/pkgconfig c++ -std=c++17 examples/basic.cpp $(PKG_CONFIG_PATH=${{ github.workspace }}/install-pkg/lib/test-triplet/pkgconfig pkg-config --cflags --libs event-hub-cpp) -o pkg-config-consumer && ./pkg-config-consumer
+        run: |
+          export PKG_CONFIG_PATH="${{ github.workspace }}/install-pkg/lib/test-triplet/pkgconfig"
+          c++ -std=c++17 examples/basic.cpp $(pkg-config --cflags --libs event-hub-cpp) -o pkg-config-consumer
+          ./pkg-config-consumer
 
       - name: Install vcpkg
         if: matrix.suite == 'vcpkg-install'
