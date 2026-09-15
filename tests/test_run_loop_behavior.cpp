@@ -125,5 +125,30 @@ int main() {
         EVENT_HUB_TEST_CHECK(timed_out);
     }
 
+    {
+        // A direct-only awaiter must not publish its deadline to the queued
+        // RunLoop path: queued polling cannot expire it, and exposing the
+        // stale deadline would make the loop spin at 100% CPU.
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        event_hub::TaskManager tasks;
+        event_hub::RunLoop loop;
+        auto options = event_hub::AwaitOptions::timeout_ms(1);
+        options.set_delivery(event_hub::DeliveryPolicy::direct);
+        endpoint.await_once<Message>([](const Message&) {}, std::move(options));
+        tasks.post_after(std::chrono::milliseconds(20), [&loop] {
+            loop.request_stop();
+        });
+        loop.add(bus);
+        loop.add(tasks);
+
+        std::size_t predicate_calls = 0;
+        loop.run_until([&predicate_calls] {
+            ++predicate_calls;
+            return false;
+        });
+        EVENT_HUB_TEST_CHECK(predicate_calls < 1000U);
+    }
+
     return 0;
 }

@@ -60,6 +60,18 @@ public:
         return std::nullopt;
     }
 
+    /// \brief Return the next deadline relevant to a dispatch source.
+    /// \param source Dispatch source that will be polled by the caller.
+    ///
+    /// The default delegates to the legacy source-independent query. Awaiters
+    /// with source-specific delivery policies should override this overload so
+    /// a deadline is only exposed to loops that can actually poll them.
+    virtual std::optional<std::chrono::steady_clock::time_point>
+    next_deadline(DispatchSource source) const noexcept {
+        (void)source;
+        return next_deadline();
+    }
+
     /// \brief Destroy the extended awaiter handle.
     ~IAwaiterEx() override = default;
 };

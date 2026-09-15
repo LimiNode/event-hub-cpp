@@ -222,7 +222,7 @@ private:
         const auto now = Clock::now();
 
         for (auto* bus : m_buses) {
-            const auto deadline = bus->next_awaiter_deadline();
+            const auto deadline = bus->next_awaiter_deadline(DispatchSource::queued);
             if (!deadline) {
                 continue;
             }

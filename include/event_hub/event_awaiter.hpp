@@ -200,6 +200,15 @@ public:
         return m_deadline;
     }
 
+    /// \brief Return the timeout only for a source accepted by this awaiter.
+    std::optional<std::chrono::steady_clock::time_point>
+    next_deadline(DispatchSource source) const noexcept override {
+        if (!EventBus::accepts_delivery(m_options.delivery, source)) {
+            return std::nullopt;
+        }
+        return next_deadline();
+    }
+
     /// \brief Destroy awaiter and cancel its subscription.
     ~EventAwaiter() override {
         cancel();

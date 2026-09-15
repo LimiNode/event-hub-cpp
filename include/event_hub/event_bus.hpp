@@ -566,11 +566,17 @@ public:
     /// no event has been queued.
     std::optional<std::chrono::steady_clock::time_point>
     next_awaiter_deadline() const noexcept {
+        return next_awaiter_deadline(DispatchSource::queued);
+    }
+
+    /// \brief Return the earliest awaiter deadline for a dispatch source.
+    std::optional<std::chrono::steady_clock::time_point>
+    next_awaiter_deadline(DispatchSource source) const noexcept {
         std::optional<std::chrono::steady_clock::time_point> best;
         std::lock_guard<std::mutex> lock(m_awaiters_mutex);
         for (const auto& weak : m_awaiters) {
             if (auto awaiter = weak.lock()) {
-                const auto deadline = awaiter->next_deadline();
+                const auto deadline = awaiter->next_deadline(source);
                 if (deadline && (!best || *deadline < *best)) {
                     best = deadline;
                 }
