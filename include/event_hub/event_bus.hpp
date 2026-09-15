@@ -195,10 +195,10 @@ public:
         record.id = id;
         record.owner = owner;
         record.delivery = delivery;
-        record.callback = [callback = std::move(typed_callback)](
-                              const void* event) {
-            callback(*static_cast<const EventType*>(event));
-        };
+        record.callback = std::make_shared<std::function<void(const void*)>>(
+            [callback = std::move(typed_callback)](const void* event) {
+                callback(*static_cast<const EventType*>(event));
+            });
 
         std::lock_guard<std::mutex> lock(m_subscriptions_mutex);
         m_callbacks[std::type_index(typeid(EventType))].push_back(
@@ -271,10 +271,10 @@ public:
         record.delivery = delivery;
         record.has_guard = true;
         record.guard = std::weak_ptr<void>(guard);
-        record.callback = [callback = std::move(typed_callback)](
-                              const void* event) {
-            callback(*static_cast<const EventType*>(event));
-        };
+        record.callback = std::make_shared<std::function<void(const void*)>>(
+            [callback = std::move(typed_callback)](const void* event) {
+                callback(*static_cast<const EventType*>(event));
+            });
 
         std::lock_guard<std::mutex> lock(m_subscriptions_mutex);
         m_callbacks[std::type_index(typeid(EventType))].push_back(
@@ -588,7 +588,7 @@ private:
         DeliveryPolicy delivery = DeliveryPolicy::any;
         bool has_guard = false;
         std::weak_ptr<void> guard;
-        std::function<void(const void*)> callback;
+        std::shared_ptr<std::function<void(const void*)>> callback;
     };
 
     struct QueuedEvent {
@@ -718,7 +718,7 @@ private:
             if (record.callback) {
                 try {
                     ++result.delivered;
-                    record.callback(event);
+                    (*record.callback)(event);
                 } catch (...) {
                     if (!report_exception(std::current_exception())) {
                         throw;

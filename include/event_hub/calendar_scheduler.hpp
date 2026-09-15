@@ -459,9 +459,20 @@ private:
         const auto steady_due =
             TaskManager::Clock::now() + std::chrono::milliseconds(delay_ms);
 
+        std::uint64_t generation = 0;
+        {
+            std::lock_guard<std::mutex> lock(core->mutex);
+            auto it = core->tasks.find(state->id);
+            if (it == core->tasks.end() || state->cancelled || core->closed) {
+                return false;
+            }
+            generation = ++state->schedule_generation;
+            state->planned_utc_ms = planned_utc_ms;
+        }
+
         std::weak_ptr<Core> weak_core = core;
         std::weak_ptr<State> weak_state = state;
-        auto task = Task([weak_core, weak_state](TaskContext& context) {
+        auto task = Task([weak_core, weak_state, generation](TaskContext& context) {
             auto locked_core = weak_core.lock();
             auto locked_state = weak_state.lock();
             if (!locked_core || !locked_state) {
@@ -470,6 +481,7 @@ private:
 
             run_due(std::move(locked_core),
                     std::move(locked_state),
+                    generation,
                     context);
         });
 
@@ -484,13 +496,15 @@ private:
         {
             std::lock_guard<std::mutex> lock(core->mutex);
             auto it = core->tasks.find(state->id);
-            if (it == core->tasks.end() || state->cancelled || core->closed) {
+            if (it == core->tasks.end() || state->cancelled || core->closed ||
+                state->schedule_generation != generation) {
                 core->manager->cancel(task_id);
                 return false;
             }
 
-            state->scheduled_task_id = task_id;
-            state->planned_utc_ms = planned_utc_ms;
+            if (state->scheduled_task_id == 0) {
+                state->scheduled_task_id = task_id;
+            }
         }
 
         emit(state,
@@ -503,6 +517,7 @@ private:
 
     static void run_due(std::shared_ptr<Core> core,
                         std::shared_ptr<State> state,
+                        std::uint64_t generation,
                         TaskContext& context) {
         time_shield::ts_ms_t planned = 0;
         TaskId task_id = context.id();
@@ -510,13 +525,16 @@ private:
         {
             std::lock_guard<std::mutex> lock(core->mutex);
             auto it = core->tasks.find(state->id);
-            if (it == core->tasks.end() || state->cancelled ||
-                core->closed) {
+            if (it == core->tasks.end() || state->cancelled || core->closed ||
+                state->schedule_generation != generation) {
                 return;
             }
 
             planned = state->planned_utc_ms;
             task_id = state->scheduled_task_id;
+            if (task_id == 0) {
+                task_id = context.id();
+            }
             state->scheduled_task_id = 0;
             run_count = state->run_count;
         }

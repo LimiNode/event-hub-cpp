@@ -118,6 +118,24 @@ public:
     }
 };
 
+class SelfShutdownModule final : public event_hub::Module {
+public:
+    SelfShutdownModule(event_hub::EventBus& bus, std::promise<void>& stopped)
+        : Module(bus,
+                 {event_hub::ModuleExecutionMode::private_thread, 8}),
+          m_stopped(&stopped) {}
+
+    void schedule_self_shutdown() {
+        tasks().post([this] {
+            shutdown();
+            m_stopped->set_value();
+        });
+    }
+
+private:
+    std::promise<void>* m_stopped = nullptr;
+};
+
 class InitSignalModule final : public event_hub::Module {
 public:
     InitSignalModule(event_hub::EventBus& bus,
@@ -567,6 +585,21 @@ int main() {
 
         hub.request_stop();
         hub.join();
+    }
+
+    {
+        // shutdown() may be called by the private worker itself. Joining is
+        // deferred until the owning thread calls shutdown() again.
+        std::promise<void> stopped;
+        auto stopped_future = stopped.get_future();
+        event_hub::ModuleHub hub;
+        auto& module = hub.emplace_module<SelfShutdownModule>(stopped);
+        hub.initialize();
+        module.schedule_self_shutdown();
+        EVENT_HUB_TEST_CHECK(stopped_future.wait_for(std::chrono::seconds(2)) ==
+                             std::future_status::ready);
+        hub.shutdown();
+        EVENT_HUB_TEST_CHECK(module.is_stopped());
     }
 
     return 0;

@@ -628,12 +628,15 @@ public:
             }
 
             auto context = make_context(entry.id);
+            // Keep the control block available if finishing the task throws
+            // after Entry has been moved into a requeue operation.
+            auto control = entry.control;
             try {
                 entry.task(context);
                 finish_after_success(std::move(entry));
                 ++processed;
             } catch (...) {
-                finish_after_exception(entry);
+                finish_after_exception(entry, std::move(control));
                 const auto exception = std::current_exception();
 
                 try {
@@ -1219,14 +1222,19 @@ private:
         }
     }
 
-    void finish_after_exception(Entry& entry) {
+    void finish_after_exception(
+        Entry& entry, const std::shared_ptr<Control>& control) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        entry.control->reschedule_requested = false;
+        if (!control) {
+            return;
+        }
 
-        auto state = entry.control->state.load(std::memory_order_acquire);
+        control->reschedule_requested = false;
+
+        auto state = control->state.load(std::memory_order_acquire);
         if (state == State::executing) {
-            if (entry.control->state.compare_exchange_strong(
+            if (control->state.compare_exchange_strong(
                     state,
                     State::completed,
                     std::memory_order_acq_rel,

@@ -133,6 +133,10 @@ public:
     /// EventBus callbacks that already started before endpoint closure.
     void shutdown() noexcept {
         if (m_stopped.load(std::memory_order_acquire)) {
+            // A private worker can request shutdown from inside its own
+            // callback. The self-join is intentionally deferred; a later
+            // shutdown call (or the owning hub) must still join that thread.
+            join_worker_noexcept();
             return;
         }
         if (m_stopping.exchange(true, std::memory_order_acq_rel)) {
