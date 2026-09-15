@@ -67,7 +67,7 @@ jobs:
 
       - name: Configure (tsan)
         if: matrix.suite == 'tsan'
-        run: cmake -S . -B build-tsan -DEVENT_HUB_CPP_BUILD_TESTS=ON -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS='-fsanitize=thread -fno-omit-frame-pointer' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread'
+        run: cmake -S . -B build-tsan -DEVENT_HUB_CPP_BUILD_TESTS=ON -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS='-fsanitize=thread -fno-omit-frame-pointer' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread'
       - name: Build (tsan)
         if: matrix.suite == 'tsan'
         run: cmake --build build-tsan
@@ -116,10 +116,10 @@ jobs:
 
       - name: Install package for pkg-config consumer
         if: matrix.suite == 'pkg-config-install'
-        run: cmake -S . -B build-pkg -DEVENT_HUB_CPP_BUILD_TESTS=OFF -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-pkg && cmake --install build-pkg
+        run: cmake -S . -B build-pkg -DEVENT_HUB_CPP_BUILD_TESTS=OFF -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DCMAKE_INSTALL_LIBDIR=lib/test-triplet -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-pkg && cmake --install build-pkg
       - name: Build and run pkg-config consumer
         if: matrix.suite == 'pkg-config-install'
-        run: PKG_CONFIG_PATH=${{ github.workspace }}/install-pkg/lib/pkgconfig c++ -std=c++17 examples/basic.cpp $(PKG_CONFIG_PATH=${{ github.workspace }}/install-pkg/lib/pkgconfig pkg-config --cflags --libs event-hub-cpp) -o pkg-config-consumer && ./pkg-config-consumer
+        run: PKG_CONFIG_PATH=${{ github.workspace }}/install-pkg/lib/test-triplet/pkgconfig c++ -std=c++17 examples/basic.cpp $(PKG_CONFIG_PATH=${{ github.workspace }}/install-pkg/lib/test-triplet/pkgconfig pkg-config --cflags --libs event-hub-cpp) -o pkg-config-consumer && ./pkg-config-consumer
 
       - name: Install vcpkg
         if: matrix.suite == 'vcpkg-install'

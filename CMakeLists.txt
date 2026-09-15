@@ -98,6 +98,33 @@ endif()
 
 set(EVENT_HUB_CPP_CONFIG_USES_TIME_SHIELD ${EVENT_HUB_CPP_USE_TIME_SHIELD})
 
+# pkg-config files live below the configured libdir. Compute the relative
+# prefix rather than assuming a single-component libdir (e.g. lib/x86_64-linux-gnu).
+string(REPLACE "/" ";" EVENT_HUB_CPP_LIBDIR_COMPONENTS "${CMAKE_INSTALL_LIBDIR}")
+list(LENGTH EVENT_HUB_CPP_LIBDIR_COMPONENTS EVENT_HUB_CPP_LIBDIR_DEPTH)
+math(EXPR EVENT_HUB_CPP_PC_PREFIX_HOPS "${EVENT_HUB_CPP_LIBDIR_DEPTH} + 1")
+set(EVENT_HUB_CPP_PC_PREFIX_REL "")
+foreach(_hop RANGE 1 ${EVENT_HUB_CPP_PC_PREFIX_HOPS})
+    set(EVENT_HUB_CPP_PC_PREFIX_REL "../${EVENT_HUB_CPP_PC_PREFIX_REL}")
+endforeach()
+
+if(EVENT_HUB_CPP_USE_TIME_SHIELD)
+    if(EVENT_HUB_CPP_USE_TIME_SHIELD_NTP)
+        set(EVENT_HUB_CPP_PC_TIME_SHIELD_NTP 1)
+    else()
+        set(EVENT_HUB_CPP_PC_TIME_SHIELD_NTP 0)
+    endif()
+    # Keep the pkg-config metadata usable with the currently checked-out
+    # submodule; the dependency floor is raised to 2.0.0 with the v2 update.
+    set(EVENT_HUB_CPP_PC_TIME_SHIELD_REQUIRES "time-shield")
+    set(EVENT_HUB_CPP_PC_TIME_SHIELD_CFLAGS
+        "-DEVENT_HUB_CPP_USE_TIME_SHIELD=1 -DEVENT_HUB_CPP_USE_TIME_SHIELD_NTP=${EVENT_HUB_CPP_PC_TIME_SHIELD_NTP}")
+else()
+    set(EVENT_HUB_CPP_PC_TIME_SHIELD_REQUIRES "")
+    set(EVENT_HUB_CPP_PC_TIME_SHIELD_CFLAGS
+        "-DEVENT_HUB_CPP_USE_TIME_SHIELD=0 -DEVENT_HUB_CPP_USE_TIME_SHIELD_NTP=0")
+endif()
+
 if(MSVC)
     set(EVENT_HUB_CPP_WARNING_FLAGS /W4)
 else()
