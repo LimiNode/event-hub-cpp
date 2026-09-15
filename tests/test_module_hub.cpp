@@ -147,6 +147,13 @@ public:
         m_torn_down->store(true, std::memory_order_release);
     }
 
+    std::size_t on_process() override {
+        ++process_calls;
+        return 0;
+    }
+
+    int process_calls = 0;
+
 private:
     std::promise<void>* m_stopped = nullptr;
     std::atomic<bool>* m_torn_down = nullptr;
@@ -618,6 +625,10 @@ int main() {
         module.schedule_self_shutdown();
         EVENT_HUB_TEST_CHECK(stopped_future.wait_for(std::chrono::seconds(2)) ==
                              std::future_status::ready);
+        EVENT_HUB_TEST_CHECK(module.is_stopping());
+        EVENT_HUB_TEST_CHECK(!module.is_stopped());
+        (void)hub.process();
+        EVENT_HUB_TEST_CHECK(module.process_calls == 0);
         hub.shutdown();
         EVENT_HUB_TEST_CHECK(module.is_stopped());
         EVENT_HUB_TEST_CHECK(!second_saw_teardown.load());
