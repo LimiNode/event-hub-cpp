@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v0.1.0] - 2026-09-19
 - Changed the direct event dispatch API from `emit<T>()` to
   `emit_direct<T>()`; the old name is intentionally not kept as an alias.
 - Added `DispatchResult` return statistics for direct dispatch and an optional
@@ -45,7 +45,6 @@ All notable changes to this project will be documented in this file.
 - Added CalendarScheduler examples for NTP-backed time and custom time around a
   winter-time transition.
 
-## [v0.1.0] - 2026-05-12
 - Added the initial header-only C++17 event bus API with typed subscriptions,
   synchronous `emit<T>()`, queued `post<T>()`, explicit `process()`, pending
   queue inspection, and queue clearing.

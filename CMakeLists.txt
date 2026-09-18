@@ -114,9 +114,9 @@ if(EVENT_HUB_CPP_USE_TIME_SHIELD)
     else()
         set(EVENT_HUB_CPP_PC_TIME_SHIELD_NTP 0)
     endif()
-    # Keep the pkg-config metadata usable with the currently checked-out
-    # submodule; the dependency floor is raised to 2.0.0 with the v2 update.
-    set(EVENT_HUB_CPP_PC_TIME_SHIELD_REQUIRES "time-shield")
+    # Match TimeShield's SameMinorVersion CMake package compatibility policy.
+    set(EVENT_HUB_CPP_PC_TIME_SHIELD_REQUIRES
+        "time-shield >= 2.0.0, time-shield < 2.1.0")
     set(EVENT_HUB_CPP_PC_TIME_SHIELD_CFLAGS
         "-DEVENT_HUB_CPP_USE_TIME_SHIELD=1 -DEVENT_HUB_CPP_USE_TIME_SHIELD_NTP=${EVENT_HUB_CPP_PC_TIME_SHIELD_NTP}")
 else()

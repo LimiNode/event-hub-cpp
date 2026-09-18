@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ asan-ubsan, tsan, time-shield-calendar, time-shield-calendar-ntp, time-shield-install-consumer, pkg-config-install, vcpkg-install ]
+        suite: [ asan-ubsan, tsan, time-shield-calendar, time-shield-calendar-ntp, time-shield-install-consumer, pkg-config-install, pkg-config-time-shield-install, vcpkg-install ]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,6 +124,19 @@ jobs:
           export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
           c++ -std=c++17 examples/basic.cpp $(pkg-config --cflags --libs event-hub-cpp) -o pkg-config-consumer
           ./pkg-config-consumer
+
+      - name: Install package with time-shield for pkg-config consumer
+        if: matrix.suite == 'pkg-config-time-shield-install'
+        run: cmake -S . -B build-pkg-ts -DEVENT_HUB_CPP_BUILD_TESTS=OFF -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DCMAKE_INSTALL_LIBDIR=lib/test-triplet -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-pkg-ts && cmake --install build-pkg-ts
+      - name: Build and run time-shield pkg-config consumer
+        if: matrix.suite == 'pkg-config-time-shield-install'
+        run: |
+          export PKG_CONFIG_PATH="${{ github.workspace }}/install-pkg-ts/lib/test-triplet/pkgconfig"
+          export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
+          pkg-config --exists 'event-hub-cpp >= 0.1.0'
+          pkg-config --print-requires event-hub-cpp | grep -F 'time-shield >= 2.0.0'
+          c++ -std=c++17 examples/calendar_scheduler.cpp $(pkg-config --cflags --libs event-hub-cpp) -o pkg-config-time-shield-consumer
+          ./pkg-config-time-shield-consumer
 
       - name: Install vcpkg
         if: matrix.suite == 'vcpkg-install'
