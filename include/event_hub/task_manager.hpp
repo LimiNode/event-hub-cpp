@@ -90,7 +90,10 @@ public:
     /// current batch and rethrows the callback exception.
     void set_exception_handler(ExceptionHandler handler) {
         std::lock_guard<std::mutex> lock(m_exception_handler_mutex);
-        m_exception_handler = std::move(handler);
+        m_exception_handler = handler
+                                  ? std::make_shared<ExceptionHandler>(
+                                        std::move(handler))
+                                  : nullptr;
     }
 
     /// \brief Stop accepting new tasks.
@@ -641,12 +644,15 @@ public:
             }
 
             auto context = make_context(entry.id);
+            // Keep the control block available if finishing the task throws
+            // after Entry has been moved into a requeue operation.
+            auto control = entry.control;
             try {
                 entry.task(context);
                 finish_after_success(std::move(entry));
                 ++processed;
             } catch (...) {
-                finish_after_exception(entry);
+                finish_after_exception(entry, std::move(control));
                 const auto exception = std::current_exception();
 
                 try {
@@ -964,7 +970,7 @@ private:
         m_pending_count.fetch_sub(1, std::memory_order_relaxed);
     }
 
-    ExceptionHandler exception_handler() const {
+    std::shared_ptr<ExceptionHandler> exception_handler() const {
         std::lock_guard<std::mutex> lock(m_exception_handler_mutex);
         return m_exception_handler;
     }
@@ -975,7 +981,7 @@ private:
             return false;
         }
 
-        handler(std::move(exception));
+        (*handler)(std::move(exception));
         return true;
     }
 
@@ -1151,34 +1157,36 @@ private:
         const auto desired =
             ready ? State::queued_ready : State::queued_delayed;
 
-        auto state = State::executing;
-        if (!entry.control->state.compare_exchange_strong(
-                state,
-                desired,
-                std::memory_order_acq_rel,
-                std::memory_order_acquire)) {
-            return;
-        }
-
-        if (!entry.periodic) {
-            increment_pending_count();
-        }
-
         entry.seq = next_seq();
         entry.due = due;
         entry.planned_due = due;
+        const auto queue_index = priority_index(entry.priority);
+        const bool periodic = entry.periodic;
 
         if (ready) {
-            m_ready[priority_index(entry.priority)].push_back(
-                std::move(entry));
+            auto& queue = m_ready[queue_index];
+            queue.push_back(std::move(entry));
+            // Publish the state only after the potentially throwing
+            // insertion succeeds; this prevents phantom controls when an
+            // allocation fails.
+            queue.back().control->state.store(desired,
+                                              std::memory_order_release);
+            if (!periodic) {
+                increment_pending_count();
+            }
             increment_ready_count();
             return;
         }
 
         m_delayed_heap.push_back(std::move(entry));
+        m_delayed_heap.back().control->state.store(
+            desired, std::memory_order_release);
         std::push_heap(m_delayed_heap.begin(),
                        m_delayed_heap.end(),
                        DelayedSooner{});
+        if (!periodic) {
+            increment_pending_count();
+        }
     }
 
     void finish_after_success(Entry entry) {
@@ -1232,14 +1240,19 @@ private:
         }
     }
 
-    void finish_after_exception(Entry& entry) {
+    void finish_after_exception(
+        Entry& entry, const std::shared_ptr<Control>& control) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        entry.control->reschedule_requested = false;
+        if (!control) {
+            return;
+        }
 
-        auto state = entry.control->state.load(std::memory_order_acquire);
+        control->reschedule_requested = false;
+
+        auto state = control->state.load(std::memory_order_acquire);
         if (state == State::executing) {
-            if (entry.control->state.compare_exchange_strong(
+            if (control->state.compare_exchange_strong(
                     state,
                     State::completed,
                     std::memory_order_acq_rel,
@@ -1293,7 +1306,7 @@ private:
     std::atomic<INotifier*> m_notifier{nullptr};
 
     mutable std::mutex m_exception_handler_mutex;
-    ExceptionHandler m_exception_handler;
+    std::shared_ptr<ExceptionHandler> m_exception_handler;
 };
 
 } // namespace event_hub

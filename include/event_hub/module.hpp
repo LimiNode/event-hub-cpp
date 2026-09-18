@@ -133,13 +133,34 @@ public:
     /// EventBus callbacks that already started before endpoint closure.
     void shutdown() noexcept {
         if (m_stopped.load(std::memory_order_acquire)) {
+            // A private worker can request shutdown from inside its own
+            // callback. The self-join is intentionally deferred; a later
+            // shutdown call (or the owning hub) must still join that thread.
+            join_worker_noexcept();
             return;
         }
-        if (m_stopping.exchange(true, std::memory_order_acq_rel)) {
-            return;
-        }
+        const bool deferred =
+            m_shutdown_deferred.load(std::memory_order_acquire);
+        if (!deferred) {
+            if (m_stopping.exchange(true, std::memory_order_acq_rel)) {
+                return;
+            }
 
-        request_worker_stop();
+            request_worker_stop();
+            if (m_worker.joinable() &&
+                m_worker.get_id() == std::this_thread::get_id()) {
+                // A worker cannot join itself. Defer the entire teardown until
+                // the owning thread joins it; otherwise the remainder of the
+                // current TaskManager batch could run against torn-down state.
+                m_shutdown_deferred.store(true, std::memory_order_release);
+                return;
+            }
+        } else if (m_worker.joinable() &&
+                   m_worker.get_id() == std::this_thread::get_id()) {
+            return;
+        } else {
+            m_shutdown_deferred.store(false, std::memory_order_release);
+        }
         join_worker_noexcept();
 
         if (m_initialized.load(std::memory_order_acquire)) {
@@ -325,6 +346,7 @@ private:
     std::atomic_bool m_initialized{false};
     std::atomic_bool m_stopping{false};
     std::atomic_bool m_stopped{false};
+    std::atomic_bool m_shutdown_deferred{false};
 
     SyncNotifier m_worker_notifier;
     std::thread m_worker;

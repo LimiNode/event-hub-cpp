@@ -1,5 +1,6 @@
 #include "test_helpers.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <future>
@@ -116,6 +117,47 @@ public:
     void publish_from_worker(const std::string& text) {
         post<Message>(text);
     }
+};
+
+class SelfShutdownModule final : public event_hub::Module {
+public:
+    SelfShutdownModule(event_hub::EventBus& bus,
+                       std::promise<void>& stopped,
+                       std::atomic<bool>& torn_down,
+                       std::atomic<bool>& second_saw_teardown)
+        : Module(bus,
+                 {event_hub::ModuleExecutionMode::private_thread, 8}),
+          m_stopped(&stopped),
+          m_torn_down(&torn_down),
+          m_second_saw_teardown(&second_saw_teardown) {}
+
+    void schedule_self_shutdown() {
+        tasks().post([this] {
+            shutdown();
+            m_stopped->set_value();
+        });
+        tasks().post([this] {
+            m_second_saw_teardown->store(
+                m_torn_down->load(std::memory_order_acquire),
+                std::memory_order_release);
+        });
+    }
+
+    void on_shutdown() noexcept override {
+        m_torn_down->store(true, std::memory_order_release);
+    }
+
+    std::size_t on_process() override {
+        ++process_calls;
+        return 0;
+    }
+
+    int process_calls = 0;
+
+private:
+    std::promise<void>* m_stopped = nullptr;
+    std::atomic<bool>* m_torn_down = nullptr;
+    std::atomic<bool>* m_second_saw_teardown = nullptr;
 };
 
 class InitSignalModule final : public event_hub::Module {
@@ -567,6 +609,29 @@ int main() {
 
         hub.request_stop();
         hub.join();
+    }
+
+    {
+        // shutdown() may be called by the private worker itself. Joining is
+        // deferred until the owning thread calls shutdown() again.
+        std::promise<void> stopped;
+        auto stopped_future = stopped.get_future();
+        event_hub::ModuleHub hub;
+        std::atomic<bool> torn_down{false};
+        std::atomic<bool> second_saw_teardown{false};
+        auto& module = hub.emplace_module<SelfShutdownModule>(
+            stopped, torn_down, second_saw_teardown);
+        hub.initialize();
+        module.schedule_self_shutdown();
+        EVENT_HUB_TEST_CHECK(stopped_future.wait_for(std::chrono::seconds(2)) ==
+                             std::future_status::ready);
+        EVENT_HUB_TEST_CHECK(module.is_stopping());
+        EVENT_HUB_TEST_CHECK(!module.is_stopped());
+        (void)hub.process();
+        EVENT_HUB_TEST_CHECK(module.process_calls == 0);
+        hub.shutdown();
+        EVENT_HUB_TEST_CHECK(module.is_stopped());
+        EVENT_HUB_TEST_CHECK(!second_saw_teardown.load());
     }
 
     return 0;

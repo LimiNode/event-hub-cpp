@@ -278,6 +278,37 @@ int main() {
     }
 
     {
+        // Dispatch snapshots must share callback state. Copying a mutable
+        // lambda into every snapshot would reset its state on each event.
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        std::vector<int> seen;
+        endpoint.subscribe_direct<Ping>(
+            [count = 0, &seen](const Ping&) mutable {
+                seen.push_back(++count);
+            });
+
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Ping>(2);
+        EVENT_HUB_TEST_CHECK((seen == std::vector<int>{1, 2}));
+    }
+
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        std::vector<int> handler_state;
+        bus.set_delivery_mismatch_handler(
+            [count = 0, &handler_state](const event_hub::DeliveryMismatch&) mutable {
+                handler_state.push_back(++count);
+            });
+        endpoint.subscribe_queued<Ping>([](const Ping&) {});
+
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Ping>(2);
+        EVENT_HUB_TEST_CHECK((handler_state == std::vector<int>{1, 2}));
+    }
+
+    {
         event_hub::EventBus bus;
         event_hub::EventEndpoint endpoint(bus);
         std::vector<std::string> messages;

@@ -276,5 +276,19 @@ int main() {
         EVENT_HUB_TEST_CHECK(!tasks.has_pending());
     }
 
+    {
+        event_hub::TaskManager tasks;
+        std::vector<int> handler_state;
+        tasks.set_exception_handler(
+            [count = 0, &handler_state](std::exception_ptr) mutable {
+                handler_state.push_back(++count);
+            });
+        tasks.post([] { throw std::runtime_error("first"); });
+        tasks.post([] { throw std::runtime_error("second"); });
+
+        EVENT_HUB_TEST_CHECK(tasks.process() == 2);
+        EVENT_HUB_TEST_CHECK((handler_state == std::vector<int>{1, 2}));
+    }
+
     return 0;
 }

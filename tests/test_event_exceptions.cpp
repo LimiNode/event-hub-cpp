@@ -91,5 +91,22 @@ int main() {
         EVENT_HUB_TEST_CHECK((seen == std::vector<int>{2, 3, 4}));
     }
 
+    {
+        event_hub::EventBus bus;
+        event_hub::EventEndpoint endpoint(bus);
+        std::vector<int> handler_state;
+        bus.set_exception_handler(
+            [count = 0, &handler_state](std::exception_ptr) mutable {
+                handler_state.push_back(++count);
+            });
+        endpoint.subscribe_direct<Ping>([](const Ping&) {
+            throw std::runtime_error("stateful handler test");
+        });
+
+        endpoint.emit_direct<Ping>(1);
+        endpoint.emit_direct<Ping>(2);
+        EVENT_HUB_TEST_CHECK((handler_state == std::vector<int>{1, 2}));
+    }
+
     return 0;
 }

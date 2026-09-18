@@ -126,7 +126,10 @@ public:
     /// fail-fast dispatch behavior.
     void set_exception_handler(ExceptionHandler handler) {
         std::lock_guard<std::mutex> lock(m_exception_handler_mutex);
-        m_exception_handler = std::move(handler);
+        m_exception_handler = handler
+                                  ? std::make_shared<ExceptionHandler>(
+                                        std::move(handler))
+                                  : nullptr;
     }
 
     /// \brief Set a handler for delivery-policy mismatches.
@@ -144,7 +147,10 @@ public:
         DeliveryMismatchHandler handler,
         DeliveryMismatchReportMode mode = DeliveryMismatchReportMode::no_delivery) {
         std::lock_guard<std::mutex> lock(m_delivery_mismatch_handler_mutex);
-        m_delivery_mismatch_handler = std::move(handler);
+        m_delivery_mismatch_handler = handler
+                                          ? std::make_shared<DeliveryMismatchHandler>(
+                                                std::move(handler))
+                                          : nullptr;
         m_delivery_mismatch_report_mode = mode;
     }
 
@@ -199,10 +205,10 @@ public:
         record.id = id;
         record.owner = owner;
         record.delivery = delivery;
-        record.callback = [callback = std::move(typed_callback)](
-                              const void* event) {
-            callback(*static_cast<const EventType*>(event));
-        };
+        record.callback = std::make_shared<std::function<void(const void*)>>(
+            [callback = std::move(typed_callback)](const void* event) {
+                callback(*static_cast<const EventType*>(event));
+            });
 
         std::lock_guard<std::mutex> lock(m_subscriptions_mutex);
         m_callbacks[std::type_index(typeid(EventType))].push_back(
@@ -275,10 +281,10 @@ public:
         record.delivery = delivery;
         record.has_guard = true;
         record.guard = std::weak_ptr<void>(guard);
-        record.callback = [callback = std::move(typed_callback)](
-                              const void* event) {
-            callback(*static_cast<const EventType*>(event));
-        };
+        record.callback = std::make_shared<std::function<void(const void*)>>(
+            [callback = std::move(typed_callback)](const void* event) {
+                callback(*static_cast<const EventType*>(event));
+            });
 
         std::lock_guard<std::mutex> lock(m_subscriptions_mutex);
         m_callbacks[std::type_index(typeid(EventType))].push_back(
@@ -623,7 +629,7 @@ private:
         DeliveryPolicy delivery = DeliveryPolicy::any;
         bool has_guard = false;
         std::weak_ptr<void> guard;
-        std::function<void(const void*)> callback;
+        std::shared_ptr<std::function<void(const void*)>> callback;
     };
 
     struct QueuedEvent {
@@ -632,7 +638,7 @@ private:
     };
 
     struct DeliveryMismatchHandlerSnapshot {
-        DeliveryMismatchHandler handler;
+        std::shared_ptr<DeliveryMismatchHandler> handler;
         DeliveryMismatchReportMode mode = DeliveryMismatchReportMode::no_delivery;
     };
 
@@ -714,7 +720,7 @@ private:
         }
 
         try {
-            snapshot.handler(
+            (*snapshot.handler)(
                 DeliveryMismatch{type, source_policy(source), result.skipped});
         } catch (...) {
             report_exception_noexcept(std::current_exception());
@@ -753,7 +759,7 @@ private:
             if (record.callback) {
                 try {
                     ++result.delivered;
-                    record.callback(event);
+                    (*record.callback)(event);
                 } catch (...) {
                     if (!report_exception(std::current_exception())) {
                         throw;
@@ -770,7 +776,7 @@ private:
         return m_next_subscription_id.fetch_add(1, std::memory_order_relaxed);
     }
 
-    ExceptionHandler exception_handler() const {
+    std::shared_ptr<ExceptionHandler> exception_handler() const {
         std::lock_guard<std::mutex> lock(m_exception_handler_mutex);
         return m_exception_handler;
     }
@@ -787,7 +793,7 @@ private:
             return false;
         }
 
-        handler(std::move(exception));
+        (*handler)(std::move(exception));
         return true;
     }
 
@@ -837,10 +843,10 @@ private:
     mutable std::vector<std::weak_ptr<IAwaiterEx>> m_awaiters;
 
     mutable std::mutex m_exception_handler_mutex;
-    ExceptionHandler m_exception_handler;
+    std::shared_ptr<ExceptionHandler> m_exception_handler;
 
     mutable std::mutex m_delivery_mismatch_handler_mutex;
-    DeliveryMismatchHandler m_delivery_mismatch_handler;
+    std::shared_ptr<DeliveryMismatchHandler> m_delivery_mismatch_handler;
     DeliveryMismatchReportMode m_delivery_mismatch_report_mode =
         DeliveryMismatchReportMode::no_delivery;
 

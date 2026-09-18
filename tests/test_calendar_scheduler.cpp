@@ -1,6 +1,7 @@
 #include "test_helpers.hpp"
 
 #include <chrono>
+#include <atomic>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -77,6 +78,54 @@ int main() {
         EVENT_HUB_TEST_CHECK(events[1].planned_utc_ms ==
                              ts_ms(2024, 6, 1, 11, 0, 0));
         EVENT_HUB_TEST_CHECK(calendar.cancel(id));
+    }
+
+    {
+        // Process immediate calendar tasks concurrently with publication of
+        // their TaskManager ids. Every one-shot rule must still execute once;
+        // an early consumer must not make add_rule() report failure.
+        event_hub::TaskManager tasks;
+        event_hub::CalendarScheduler calendar(tasks);
+        std::atomic<bool> running{true};
+        std::atomic<int> calls{0};
+        std::thread consumer([&] {
+            while (running.load(std::memory_order_relaxed)) {
+                (void)tasks.process();
+                std::this_thread::yield();
+            }
+            (void)tasks.process();
+        });
+
+        const auto now = ts_ms(2024, 6, 1, 10, 0, 0);
+        constexpr int rule_count = 64;
+        for (int i = 0; i != rule_count; ++i) {
+            auto first = std::make_shared<bool>(true);
+            event_hub::CalendarTaskOptions options;
+            options.now_provider = [now] { return now; };
+            const auto id = calendar.add_custom_calendar_task(
+                [first](time_shield::ts_ms_t,
+                        time_shield::ts_ms_t observed) mutable
+                    -> std::optional<time_shield::ts_ms_t> {
+                    if (*first) {
+                        *first = false;
+                        return observed;
+                    }
+                    return std::nullopt;
+                },
+                [&calls] { calls.fetch_add(1, std::memory_order_relaxed); },
+                std::move(options));
+            EVENT_HUB_TEST_CHECK(id != 0);
+        }
+
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::seconds(2);
+        while (calls.load(std::memory_order_relaxed) != rule_count &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        running.store(false, std::memory_order_relaxed);
+        consumer.join();
+        EVENT_HUB_TEST_CHECK(calls.load(std::memory_order_relaxed) == rule_count);
     }
 
     {
