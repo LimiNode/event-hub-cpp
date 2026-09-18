@@ -1,8 +1,9 @@
-prefix=${pcfiledir}/../..
+prefix=${pcfiledir}/@EVENT_HUB_CPP_PC_PREFIX_REL@
 includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
 
 Name: event-hub-cpp
 Description: Lightweight C++ event bus for modular applications
 Version: @PROJECT_VERSION@
-Cflags: -I${includedir}
-Libs:
+Cflags: -I${includedir} @EVENT_HUB_CPP_PC_TIME_SHIELD_CFLAGS@
+Libs: @CMAKE_THREAD_LIBS_INIT@
+Requires: @EVENT_HUB_CPP_PC_TIME_SHIELD_REQUIRES@

@@ -5,9 +5,9 @@
 [![Language](https://img.shields.io/badge/language-C%2B%2B17%2B-orange.svg)](CMakeLists.txt)
 [![Header only](https://img.shields.io/badge/header--only-yes-brightgreen.svg)](include/event_hub.hpp)
 [![Packages](https://img.shields.io/badge/packages-CMake%20%7C%20pkg--config%20%7C%20vcpkg%20overlay-6f42c1.svg)](#installation)
-![CI Windows](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=Windows&logo=windows)
-![CI Linux](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=Linux&logo=linux)
-![CI macOS](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=macOS&logo=apple)
+![CI Windows](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=Windows&logo=windows)
+![CI Linux](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=Linux&logo=linux)
+![CI macOS](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=macOS&logo=apple)
 
 [Read in Russian](README-RU.md)
 
@@ -35,6 +35,10 @@ Key characteristics:
   calendar rules when `time-shield-cpp` integration is enabled.
 - Optional `RunLoop` blocks the calling thread while processing any number of
   event buses and task managers.
+- `Module` and `ModuleHub` provide explicit module lifecycle and composition
+  while preserving the passive event/task processing model.
+- Request/result helpers correlate paired events with a bus-wide `RequestId`;
+  `request_future()` is available when a future-based result is preferable.
 - Optional external notifiers wake application event loops after queued work is
   posted.
 - `await_once()` and `await_each()` provide callback-based waiting.
@@ -81,10 +85,13 @@ See [docs/project-structure.md](docs/project-structure.md) for the full guide.
 | `<event_hub/cancellation.hpp>` | Cancellation token/source primitives. |
 | `<event_hub/event.hpp>` | Optional base event contract with type/name/clone metadata. |
 | `<event_hub/event_listener.hpp>` | Optional generic listener interface for `Event`-derived types. |
+| `<event_hub/request.hpp>` | `RequestId`, timeout errors, and request correlation traits. |
 | `<event_hub/notifier.hpp>` | `INotifier` and `SyncNotifier` for external event-loop wakeups. |
 | `<event_hub/run_loop.hpp>` | Blocking current-thread loop for registered buses and task managers. |
 | `<event_hub/task.hpp>` | Move-only `Task`, `TaskContext`, `TaskId`, priority, periodic policy, and task options. |
 | `<event_hub/task_manager.hpp>` | Passive `TaskManager` for immediate, delayed, and periodic task processing. |
+| `<event_hub/module.hpp>` | Module lifecycle, execution modes, and an owned task manager. |
+| `<event_hub/module_hub.hpp>` | Shared-bus module composition with passive and active loop helpers. |
 | `<event_hub/calendar_scheduler.hpp>` | Optional `time-shield-cpp` calendar scheduler layer for daily/weekly/monthly rules. |
 
 ## Quick Start
@@ -181,6 +188,30 @@ or `subscribe_any<T>()` only when a callback is intentionally safe for both
 delivery sources. Modules owned by `std::shared_ptr` can pass
 `weak_from_this()` to `subscribe<T>(DeliveryPolicy, guard, callback)` when
 callbacks capture module state.
+
+## Modules and request/results
+
+`Module` combines an `EventNode` with an owned `TaskManager` and explicit
+`initialize()`, `process()`, and `shutdown()` lifecycle hooks. `ModuleHub` owns
+one shared `EventBus` and a collection of modules; it can be embedded in an
+existing loop or run through its convenience `run()`/`start()` wrappers.
+
+For request-style workflows, prefer paired request and result event types with
+the same `event_hub::RequestId`:
+
+```cpp
+struct CheckRequest { event_hub::RequestId request_id{}; };
+struct CheckResult  { event_hub::RequestId request_id{}; bool ok{}; };
+
+endpoint.request<CheckRequest, CheckResult>(
+    CheckRequest{}, [](const CheckResult& result) {
+        // The matching request_id is selected automatically.
+    });
+```
+
+Use `request_future<RequestEvent, ResultEvent>()` when a future-based API is
+more convenient. The bus remains passive: a caller must still invoke
+`process()` (or use a `RunLoop`) to dispatch the request and its result.
 
 ## Awaiters
 
@@ -397,7 +428,7 @@ The exported target is `event_hub::event_hub`. The package also provides
 Add the repository as a subdirectory and link the interface target:
 
 ```bash
-git submodule add https://github.com/NewYaroslav/event-hub-cpp external/event-hub-cpp
+git submodule add https://github.com/LimiNode/event-hub-cpp external/event-hub-cpp
 ```
 
 ```cmake
@@ -551,6 +582,16 @@ sleep. When a non-owning `INotifier` is set, each successful `post()` calls
 `notify()` after work is queued. This lets an application event loop wait on one
 shared notifier used by the bus, task manager, timers, or other sources:
 
+The notifier is non-owning. Keep it alive until all producer threads have
+stopped, then call `reset_notifier()` before destroying it; resetting the atomic
+pointer alone does not wait for a producer that already loaded the old pointer.
+
+Threading contract: `EventBus::post()` and the `TaskManager` producer APIs
+(`post`, `submit`, delayed/periodic submission, and `cancel`) are safe from
+producer threads. `process()`, `emit_direct()`, subscribe/unsubscribe,
+awaiter/request creation, endpoint close, and lifecycle operations are
+single-consumer operations; synchronize them in the owning event-loop thread.
+
 ```cpp
 event_hub::SyncNotifier notifier;
 event_hub::EventBus bus;
@@ -649,8 +690,10 @@ itself:
 The basic model is intentionally simple:
 
 - `post()` may be called from producer threads.
-- Prefer calling `process()`, `emit_direct()`, `subscribe()`, and `unsubscribe()` from
-  the application/event-loop thread.
+- Producer-safe operations include `post()` and task submission/cancellation APIs.
+  `process()`, `emit_direct()`, subscription/lifecycle operations, and endpoint
+  creation/close are single-consumer operations and should be confined to the
+  application/event-loop thread.
 - `EventEndpoint::~EventEndpoint()` closes the endpoint, removes
   subscriptions, and prevents new guarded callbacks from starting.
 - `EventEndpoint::~EventEndpoint()` does not wait for callbacks that already

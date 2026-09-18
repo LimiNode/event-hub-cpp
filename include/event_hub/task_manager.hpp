@@ -71,8 +71,9 @@ public:
 
     /// \brief Set a non-owning notifier called after accepted submissions.
     ///
-    /// The caller must keep the notifier alive while producers may submit work,
-    /// or call reset_notifier() before destroying it.
+    /// The caller must keep the notifier alive while producers may submit work.
+    /// Producers must be quiescent before reset_notifier() or notifier
+    /// destruction; reset_notifier() does not wait for an in-flight producer.
     void set_notifier(INotifier* notifier) noexcept {
         m_notifier.store(notifier, std::memory_order_release);
     }

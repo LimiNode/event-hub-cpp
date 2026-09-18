@@ -2,7 +2,7 @@
   "name": "event-hub-cpp",
   "version": "0.1.0",
   "description": "Header-only C++ event bus for modular applications.",
-  "homepage": "https://github.com/NewYaroslav/event-hub-cpp",
+  "homepage": "https://github.com/LimiNode/event-hub-cpp",
   "license": "MIT",
   "dependencies": [
     "vcpkg-cmake",

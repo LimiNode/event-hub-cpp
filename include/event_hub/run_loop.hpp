@@ -43,6 +43,10 @@ public:
                                       : max_tasks_per_manager) {}
 
     /// \brief Reset registered source notifiers.
+    ///
+    /// Call only after producer threads for all registered sources are
+    /// quiescent. Resetting a source notifier does not wait for producers that
+    /// already loaded its pointer.
     ~RunLoop() {
         reset_sources();
     }

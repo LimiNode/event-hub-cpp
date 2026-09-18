@@ -5,9 +5,9 @@
 [![Язык](https://img.shields.io/badge/language-C%2B%2B17%2B-orange.svg)](CMakeLists.txt)
 [![Header only](https://img.shields.io/badge/header--only-yes-brightgreen.svg)](include/event_hub.hpp)
 [![Пакеты](https://img.shields.io/badge/packages-CMake%20%7C%20pkg--config%20%7C%20vcpkg%20overlay-6f42c1.svg)](#установка)
-![CI Windows](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=Windows&logo=windows)
-![CI Linux](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=Linux&logo=linux)
-![CI macOS](https://img.shields.io/github/actions/workflow/status/NewYaroslav/event-hub-cpp/ci.yml?branch=main&label=macOS&logo=apple)
+![CI Windows](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=Windows&logo=windows)
+![CI Linux](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=Linux&logo=linux)
+![CI macOS](https://img.shields.io/github/actions/workflow/status/LimiNode/event-hub-cpp/ci.yml?branch=main&label=macOS&logo=apple)
 
 [Read in English](README.md)
 
@@ -56,6 +56,51 @@
 | `<event_hub/task.hpp>` | Move-only `Task`, `TaskContext`, `TaskId`, приоритет, periodic policy и опции задач. |
 | `<event_hub/task_manager.hpp>` | Пассивный `TaskManager` для immediate, delayed и periodic задач. |
 | `<event_hub/calendar_scheduler.hpp>` | Опциональный calendar scheduler на `time-shield-cpp` для daily/weekly/monthly правил. |
+| `<event_hub/request.hpp>` | Типы и traits для request/result корреляции через `RequestId`. |
+| `<event_hub/module.hpp>` | Базовый `Module`: жизненный цикл, собственный `TaskManager` и режим выполнения. |
+| `<event_hub/module_hub.hpp>` | `ModuleHub` с общей шиной, регистрацией модулей и пассивным process/run loop. |
+
+## Модули и ModuleHub
+
+`Module` объединяет `EventNode` и собственный `TaskManager`. Жизненный цикл
+явный: `initialize()`, `process()` и `shutdown()`. По умолчанию модуль
+обрабатывается inline в `ModuleHub`; также доступны режимы private thread и
+manual для интеграции с внешним циклом.
+
+`ModuleHub` владеет одной общей `EventBus` и зарегистрированными модулями.
+Он остаётся пассивным источником работы: приложение может вызывать
+`process()`/`process_once()`, использовать `has_pending()` и `next_deadline()`,
+либо запустить удобные обёртки `run()` и `start()`.
+
+## Request/result API
+
+Для запроса, которому нужен один конкретный результат, используйте парные
+события с общим `event_hub::RequestId` и helper
+`request<RequestEvent, ResultEvent>()`:
+
+```cpp
+struct CheckRequest {
+    event_hub::RequestId request_id = event_hub::invalid_request_id;
+    int value = 0;
+};
+
+struct CheckResult {
+    event_hub::RequestId request_id = event_hub::invalid_request_id;
+    bool ok = false;
+};
+
+endpoint.request<CheckRequest, CheckResult>(
+    CheckRequest{event_hub::invalid_request_id, 42},
+    [](const CheckResult& result) {
+        // result.request_id совпадает с request_id запроса
+    });
+```
+
+`request_future<RequestEvent, ResultEvent>()` возвращает future для
+future-based кода. Шина остаётся пассивной: для доставки запроса и результата
+нужно вызывать `process()` (обычно два раза, поскольку результат ставится в
+очередь обработчиком запроса). Если поле корреляции называется иначе,
+специализируйте `event_hub::RequestTraits<T>` в `request.hpp`.
 
 ## Быстрый Старт
 
@@ -326,7 +371,7 @@ target_link_libraries(app PRIVATE event_hub::event_hub)
 Добавьте репозиторий как subdirectory и подключите interface target:
 
 ```bash
-git submodule add https://github.com/NewYaroslav/event-hub-cpp external/event-hub-cpp
+git submodule add https://github.com/LimiNode/event-hub-cpp external/event-hub-cpp
 ```
 
 ```cmake
@@ -453,6 +498,21 @@ CI также проверяет подключение установленно
   нескольких task manager-ов.
 
 ## Dispatch И Потоки
+
+Явный threading contract библиотеки:
+
+- Из producer-потоков безопасны `post()` и API постановки/отмены задач
+  `TaskManager` (`post`, `submit`, delayed/periodic submission, `cancel`).
+- `process()`, `emit_direct()`, создание и удаление подписок/awaiter-ов и
+  request-ов, `EventEndpoint::close()` и lifecycle-операции являются
+  single-consumer API. Вызывайте их из event-loop потока либо обеспечьте
+  внешнюю синхронизацию.
+
+Non-owning notifier должен жить до остановки всех producer-потоков. Перед его
+уничтожением сначала дождитесь quiescence producer-ов, затем вызовите
+`reset_notifier()`: сброс атомарного указателя не ждёт producer, который уже
+успел загрузить старый указатель. Деструктор `RunLoop` следует этому правилу,
+поэтому его источники также должны быть quiescent.
 
 `post<T>()` можно вызывать из producer-потоков. `emit_direct<T>()` и `process()`
 вызывают callback-и в том потоке, где были вызваны сами методы. Перед dispatch

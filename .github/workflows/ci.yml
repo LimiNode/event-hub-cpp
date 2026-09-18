@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ asan-ubsan, time-shield-calendar, time-shield-install-consumer, vcpkg-install ]
+        suite: [ asan-ubsan, tsan, time-shield-calendar, time-shield-calendar-ntp, time-shield-install-consumer, pkg-config-install, vcpkg-install ]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -65,6 +65,16 @@ jobs:
         if: matrix.suite == 'asan-ubsan'
         run: ctest --test-dir build --output-on-failure --timeout 30
 
+      - name: Configure (tsan)
+        if: matrix.suite == 'tsan'
+        run: cmake -S . -B build-tsan -DEVENT_HUB_CPP_BUILD_TESTS=ON -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS='-fsanitize=thread -fno-omit-frame-pointer' -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread'
+      - name: Build (tsan)
+        if: matrix.suite == 'tsan'
+        run: cmake --build build-tsan
+      - name: Test (tsan)
+        if: matrix.suite == 'tsan'
+        run: ctest --test-dir build-tsan --output-on-failure --timeout 30
+
       - name: Configure (time-shield-calendar)
         if: matrix.suite == 'time-shield-calendar'
         run: cmake -S . -B build-calendar -DEVENT_HUB_CPP_BUILD_TESTS=ON -DEVENT_HUB_CPP_BUILD_EXAMPLES=ON -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DCMAKE_CXX_STANDARD=17
@@ -74,6 +84,16 @@ jobs:
       - name: Test (time-shield-calendar)
         if: matrix.suite == 'time-shield-calendar'
         run: ctest --test-dir build-calendar --output-on-failure --timeout 30
+
+      - name: Configure (time-shield-calendar-ntp)
+        if: matrix.suite == 'time-shield-calendar-ntp'
+        run: cmake -S . -B build-calendar-ntp -DEVENT_HUB_CPP_BUILD_TESTS=ON -DEVENT_HUB_CPP_BUILD_EXAMPLES=ON -DEVENT_HUB_CPP_USE_TIME_SHIELD=ON -DEVENT_HUB_CPP_USE_TIME_SHIELD_NTP=ON -DCMAKE_CXX_STANDARD=17
+      - name: Build (time-shield-calendar-ntp)
+        if: matrix.suite == 'time-shield-calendar-ntp'
+        run: cmake --build build-calendar-ntp
+      - name: Test (time-shield-calendar-ntp)
+        if: matrix.suite == 'time-shield-calendar-ntp'
+        run: ctest --test-dir build-calendar-ntp --output-on-failure --timeout 30
 
       - name: Configure package with time-shield
         if: matrix.suite == 'time-shield-install-consumer'
@@ -86,13 +106,24 @@ jobs:
         run: cmake --install build-ts-install --prefix install-ts
       - name: Configure install consumer with time-shield
         if: matrix.suite == 'time-shield-install-consumer'
-        run: cmake -S tests/install_consumer -B build-ts-consumer -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install-ts;${{ github.workspace }}/build-ts-install/external/time-shield-cpp" -DEVENT_HUB_CPP_INSTALL_CONSUMER_USE_CALENDAR=ON -DCMAKE_CXX_STANDARD=17
+        run: cmake -S tests/install_consumer -B build-ts-consumer -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install-ts" -DEVENT_HUB_CPP_INSTALL_CONSUMER_USE_CALENDAR=ON -DCMAKE_CXX_STANDARD=17
       - name: Build install consumer with time-shield
         if: matrix.suite == 'time-shield-install-consumer'
         run: cmake --build build-ts-consumer
       - name: Test install consumer with time-shield
         if: matrix.suite == 'time-shield-install-consumer'
         run: ctest --test-dir build-ts-consumer --output-on-failure --timeout 30
+
+      - name: Install package for pkg-config consumer
+        if: matrix.suite == 'pkg-config-install'
+        run: cmake -S . -B build-pkg -DEVENT_HUB_CPP_BUILD_TESTS=OFF -DEVENT_HUB_CPP_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_LIBDIR=lib/test-triplet -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-pkg && cmake --install build-pkg
+      - name: Build and run pkg-config consumer
+        if: matrix.suite == 'pkg-config-install'
+        run: |
+          export PKG_CONFIG_PATH="${{ github.workspace }}/install-pkg/lib/test-triplet/pkgconfig"
+          export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
+          c++ -std=c++17 examples/basic.cpp $(pkg-config --cflags --libs event-hub-cpp) -o pkg-config-consumer
+          ./pkg-config-consumer
 
       - name: Install vcpkg
         if: matrix.suite == 'vcpkg-install'
@@ -122,6 +153,10 @@ jobs:
             build/Testing/Temporary/LastTest.log
             build-calendar/CMakeFiles/CMakeOutput.log
             build-calendar/Testing/Temporary/LastTest.log
+            build-calendar-ntp/CMakeFiles/CMakeOutput.log
+            build-calendar-ntp/Testing/Temporary/LastTest.log
+            build-tsan/CMakeFiles/CMakeOutput.log
+            build-tsan/Testing/Temporary/LastTest.log
             build-ts-install/CMakeFiles/CMakeOutput.log
             build-ts-install/Testing/Temporary/LastTest.log
             build-ts-consumer/CMakeFiles/CMakeOutput.log
