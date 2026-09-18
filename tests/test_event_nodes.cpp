@@ -27,6 +27,10 @@ public:
         post<Ping>(value);
     }
 
+    void publish_event(const Ping& event) {
+        post(event);
+    }
+
     void on_event(const event_hub::Event&) override {}
 
     int total = 0;
@@ -134,9 +138,15 @@ int main() {
         EVENT_HUB_TEST_CHECK(bus.process() == 1);
         EVENT_HUB_TEST_CHECK(node.total == 5);
 
+        Ping event{4};
+        node.publish_event(event);
+        event.value = 100;
+        EVENT_HUB_TEST_CHECK(bus.process() == 1);
+        EVENT_HUB_TEST_CHECK(node.total == 9);
+
         node.stop_one();
         bus.emit_direct<Ping>(4);
-        EVENT_HUB_TEST_CHECK(node.total == 5);
+        EVENT_HUB_TEST_CHECK(node.total == 9);
     }
 
     return 0;

@@ -538,57 +538,69 @@ public:
             return false;
         }
 
-        std::lock_guard<std::mutex> lock(m_mutex);
-        auto it = m_index.find(id);
-        if (it == m_index.end()) {
-            return false;
+        bool cancelled = false;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_index.find(id);
+            if (it == m_index.end()) {
+                return false;
+            }
+
+            auto& control = it->second;
+            auto state = control->state.load(std::memory_order_acquire);
+            switch (state) {
+            case State::queued_ready:
+                if (!transition(*control, state, State::cancelled)) {
+                    return false;
+                }
+                decrement_ready_count();
+                decrement_pending_count();
+                m_index.erase(it);
+                cancelled = true;
+                break;
+
+            case State::queued_delayed:
+                if (!transition(*control, state, State::cancelled)) {
+                    return false;
+                }
+                decrement_pending_count();
+                m_index.erase(it);
+                cancelled = true;
+                break;
+
+            case State::ready_snapshot:
+                if (!transition(*control, state, State::cancelled)) {
+                    return false;
+                }
+                decrement_pending_count();
+                m_index.erase(it);
+                cancelled = true;
+                break;
+
+            case State::executing:
+                if (!control->periodic) {
+                    return false;
+                }
+                if (!transition(*control, state, State::cancelled)) {
+                    return false;
+                }
+                decrement_pending_count();
+                control->reschedule_requested = false;
+                cancelled = true;
+                break;
+
+            case State::cancelled:
+            case State::completed:
+                return false;
+            }
         }
 
-        auto& control = it->second;
-        auto state = control->state.load(std::memory_order_acquire);
-        switch (state) {
-        case State::queued_ready:
-            if (!transition(*control, state, State::cancelled)) {
-                return false;
-            }
-            decrement_ready_count();
-            decrement_pending_count();
-            m_index.erase(it);
-            return true;
-
-        case State::queued_delayed:
-            if (!transition(*control, state, State::cancelled)) {
-                return false;
-            }
-            decrement_pending_count();
-            m_index.erase(it);
-            return true;
-
-        case State::ready_snapshot:
-            if (!transition(*control, state, State::cancelled)) {
-                return false;
-            }
-            decrement_pending_count();
-            m_index.erase(it);
-            return true;
-
-        case State::executing:
-            if (!control->periodic) {
-                return false;
-            }
-            if (!transition(*control, state, State::cancelled)) {
-                return false;
-            }
-            decrement_pending_count();
-            control->reschedule_requested = false;
-            return true;
-
-        case State::cancelled:
-        case State::completed:
-            return false;
+        if (cancelled) {
+            // Cancellation may move the earliest delayed deadline. Wake an
+            // external loop so it can recompute its wait duration promptly.
+            notify_work_available();
         }
-
-        return false;
+        return cancelled;
     }
 
     /// \brief Execute up to max_tasks ready tasks.

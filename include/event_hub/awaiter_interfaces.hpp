@@ -6,6 +6,8 @@
 /// \brief Interfaces for cancelable event awaiters.
 
 #include <cstdint>
+#include <chrono>
+#include <optional>
 
 namespace event_hub {
 
@@ -48,6 +50,27 @@ public:
     /// \brief Poll timeout and cancellation conditions.
     /// \param source Dispatch source that reached the polling point.
     virtual void poll_timeout(DispatchSource source) noexcept = 0;
+
+    /// \brief Return the next timeout deadline, if one is configured.
+    ///
+    /// The deadline is used by blocking helpers such as RunLoop to wake up
+    /// when a passive awaiter needs to be polled even when no events arrive.
+    virtual std::optional<std::chrono::steady_clock::time_point>
+    next_deadline() const noexcept {
+        return std::nullopt;
+    }
+
+    /// \brief Return the next deadline relevant to a dispatch source.
+    /// \param source Dispatch source that will be polled by the caller.
+    ///
+    /// The default delegates to the legacy source-independent query. Awaiters
+    /// with source-specific delivery policies should override this overload so
+    /// a deadline is only exposed to loops that can actually poll them.
+    virtual std::optional<std::chrono::steady_clock::time_point>
+    next_deadline(DispatchSource source) const noexcept {
+        (void)source;
+        return next_deadline();
+    }
 
     /// \brief Destroy the extended awaiter handle.
     ~IAwaiterEx() override = default;

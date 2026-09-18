@@ -63,6 +63,27 @@ private:
     RequestId m_request_id = invalid_request_id;
 };
 
+/// \class RequestCancelledError
+/// \brief Exception stored in request_future() when its cancellation token fires.
+class RequestCancelledError : public std::runtime_error {
+public:
+    /// \brief Construct an error for a cancelled request.
+    /// \param request_id Request id that was cancelled.
+    explicit RequestCancelledError(RequestId request_id)
+        : std::runtime_error("event_hub request cancelled: " +
+                             std::to_string(request_id)),
+          m_request_id(request_id) {}
+
+    /// \brief Return the cancelled request id.
+    /// \return Request id associated with this error.
+    RequestId request_id() const noexcept {
+        return m_request_id;
+    }
+
+private:
+    RequestId m_request_id = invalid_request_id;
+};
+
 /// \struct RequestTraits
 /// \brief Default accessors for events with a public request_id field.
 ///

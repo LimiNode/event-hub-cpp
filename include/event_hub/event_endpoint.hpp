@@ -17,11 +17,20 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace event_hub {
+
+/// \class EventEndpointClosedError
+/// \brief Exception stored in request_future() when the endpoint is closed.
+class EventEndpointClosedError : public std::runtime_error {
+public:
+    EventEndpointClosedError()
+        : std::runtime_error("event_hub endpoint is closed") {}
+};
 
 /// \class EventEndpoint
 /// \brief RAII connection point that owns subscriptions and awaiters.
@@ -73,7 +82,9 @@ public:
         }
 
         cancel_awaiters();
-        unsubscribe_all();
+        // Bypass the public closed-state guard so close() can always clean up
+        // subscriptions, including when called repeatedly.
+        m_bus.unsubscribe_all(this);
     }
 
     /// \brief Return true after this endpoint has been explicitly closed.
@@ -126,6 +137,9 @@ public:
                   int>::type = 0>
     EventBus::SubscriptionId subscribe(DeliveryPolicy delivery,
                                        Callback&& callback) {
+        if (m_closed) {
+            return 0U;
+        }
         return m_bus.subscribe<EventType>(
             this,
             delivery,
@@ -201,6 +215,9 @@ public:
     EventBus::SubscriptionId subscribe(DeliveryPolicy delivery,
                                        std::weak_ptr<Guard> user_guard,
                                        Callback&& callback) {
+        if (m_closed) {
+            return 0U;
+        }
         std::function<void(const EventType&)> typed_callback(
             std::forward<Callback>(callback));
 
@@ -266,6 +283,9 @@ public:
     template <typename EventType>
     EventBus::SubscriptionId subscribe(DeliveryPolicy delivery,
                                        EventListener& listener) {
+        if (m_closed) {
+            return 0U;
+        }
         return m_bus.subscribe<EventType>(this, delivery, guard(), listener);
     }
 
@@ -341,12 +361,18 @@ public:
     /// \tparam EventType Concrete event type to unsubscribe.
     template <typename EventType>
     void unsubscribe() {
+        if (m_closed) {
+            return;
+        }
         m_bus.template unsubscribe_all<EventType>(this);
     }
 
     /// \brief Remove one subscription by id.
     /// \param id Subscription id returned by subscribe().
     void unsubscribe(EventBus::SubscriptionId id) {
+        if (m_closed) {
+            return;
+        }
         m_bus.unsubscribe(id);
     }
 
@@ -355,6 +381,9 @@ public:
     /// This removes future records from the bus storage, but it does not wait
     /// for callbacks that already started.
     void unsubscribe_all() {
+        if (m_closed) {
+            return;
+        }
         m_bus.unsubscribe_all(this);
     }
 
@@ -366,6 +395,9 @@ public:
     /// on the bus.
     template <typename EventType>
     DispatchResult emit_direct(const EventType& event) const {
+        if (m_closed) {
+            return {};
+        }
         return m_bus.emit_direct<EventType>(event);
     }
 
@@ -382,6 +414,9 @@ public:
                   !detail::IsSingleEventArgument<EventType, Args...>::value,
                   int>::type = 0>
     DispatchResult emit_direct(Args&&... args) const {
+        if (m_closed) {
+            return {};
+        }
         return m_bus.template emit_direct<EventType>(
             std::forward<Args>(args)...);
     }
@@ -391,15 +426,24 @@ public:
     /// \param event Event object to copy into the queue.
     template <typename EventType>
     void post(const EventType& event) {
+        if (m_closed) {
+            return;
+        }
         m_bus.template post<EventType>(event);
     }
 
     /// \brief Queue an already constructed event for later processing.
     /// \tparam EventType Concrete event type to queue.
     /// \param event Event object to move into the queue.
-    template <typename EventType>
+    template <typename EventType,
+              typename std::enable_if<
+                  !std::is_lvalue_reference<EventType>::value,
+                  int>::type = 0>
     void post(EventType&& event) {
-        m_bus.template post<EventType>(std::move(event));
+        if (m_closed) {
+            return;
+        }
+        m_bus.template post<EventType>(std::forward<EventType>(event));
     }
 
     /// \brief Construct and queue an event for later processing.
@@ -412,6 +456,9 @@ public:
                   !detail::IsSingleEventArgument<EventType, Args...>::value,
                   int>::type = 0>
     void post(Args&&... args) {
+        if (m_closed) {
+            return;
+        }
         m_bus.template post<EventType>(std::forward<Args>(args)...);
     }
 
@@ -436,6 +483,9 @@ public:
     std::shared_ptr<IAwaiter> await_once(Predicate&& predicate,
                                          Callback&& callback,
                                          AwaitOptions options = {}) {
+        if (m_closed) {
+            return {};
+        }
         return make_awaiter<EventType>(std::forward<Predicate>(predicate),
                                        std::forward<Callback>(callback),
                                        std::move(options),
@@ -479,6 +529,9 @@ public:
     std::shared_ptr<IAwaiter> await_each(Predicate&& predicate,
                                          Callback&& callback,
                                          AwaitOptions options = {}) {
+        if (m_closed) {
+            return {};
+        }
         return make_awaiter<EventType>(std::forward<Predicate>(predicate),
                                        std::forward<Callback>(callback),
                                        std::move(options),
@@ -521,6 +574,9 @@ public:
     RequestId request(RequestEvent request,
                       Callback&& callback,
                       AwaitOptions options = {}) {
+        if (m_closed) {
+            return invalid_request_id;
+        }
         const auto id = next_request_id();
         RequestTraits<RequestEvent>::set_id(request, id);
 
@@ -545,9 +601,15 @@ public:
     std::future<ResultEvent> request_future(RequestEvent request,
                                             AwaitOptions options = {}) {
         auto promise = std::make_shared<std::promise<ResultEvent>>();
+        auto future = promise->get_future();
+        if (m_closed) {
+            promise->set_exception(
+                std::make_exception_ptr(EventEndpointClosedError()));
+            return future;
+        }
+
         auto completed = std::make_shared<std::atomic_bool>(false);
         auto request_id = std::make_shared<RequestId>(invalid_request_id);
-        auto future = promise->get_future();
 
         auto user_on_timeout = std::move(options.on_timeout);
         options.on_timeout = [promise, completed, request_id, user_on_timeout] {
@@ -559,6 +621,19 @@ public:
             }
             if (user_on_timeout) {
                 user_on_timeout();
+            }
+        };
+
+        auto user_on_cancel = std::move(options.on_cancel);
+        options.on_cancel = [promise, completed, request_id, user_on_cancel] {
+            bool expected = false;
+            if (completed->compare_exchange_strong(expected, true,
+                                                   std::memory_order_relaxed)) {
+                promise->set_exception(
+                    std::make_exception_ptr(RequestCancelledError(*request_id)));
+            }
+            if (user_on_cancel) {
+                user_on_cancel();
             }
         };
 
@@ -579,6 +654,9 @@ public:
     /// \brief Return the next bus-wide request id.
     /// \return Generated request id.
     RequestId next_request_id() noexcept {
+        if (m_closed) {
+            return invalid_request_id;
+        }
         return m_bus.next_request_id();
     }
 
