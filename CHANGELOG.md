@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.1] - 2026-09-20
+- Defined `calendar_scheduler.hpp` as the supported aggregate entry point for
+  CalendarScheduler.
+- Removed cross-directory traversal includes from aggregate-owned calendar
+  headers and documented their non-standalone include contract.
+
 ## [v0.1.0] - 2026-09-19
 - Changed the direct event dispatch API from `emit<T>()` to
   `emit_direct<T>()`; the old name is intentionally not kept as an alias.

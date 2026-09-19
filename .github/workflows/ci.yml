@@ -133,7 +133,7 @@ jobs:
         run: |
           export PKG_CONFIG_PATH="${{ github.workspace }}/install-pkg-ts/lib/test-triplet/pkgconfig"
           export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
-          pkg-config --exists 'event-hub-cpp >= 0.1.0'
+          pkg-config --exists 'event-hub-cpp >= 0.1.1'
           pkg-config --print-requires event-hub-cpp | grep -F 'time-shield >= 2.0.0'
           c++ -std=c++17 examples/calendar_scheduler.cpp $(pkg-config --cflags --libs event-hub-cpp) -o pkg-config-time-shield-consumer
           ./pkg-config-time-shield-consumer

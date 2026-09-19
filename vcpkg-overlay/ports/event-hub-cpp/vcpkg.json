@@ -1,6 +1,6 @@
 {
   "name": "event-hub-cpp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Header-only C++ event bus for modular applications.",
   "homepage": "https://github.com/LimiNode/event-hub-cpp",
   "license": "MIT",
