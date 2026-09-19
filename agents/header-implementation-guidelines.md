@@ -17,7 +17,9 @@
   relative path, for example `#include "event_bus.hpp"` instead of
   `#include "event_hub/event_bus.hpp"`.
 - Keep public headers dependency-light and standard-library-only.
-- Include what each header uses.
+- Include what each standalone header or public entry point uses. Aggregate-
+  owned supporting headers may rely on prerequisites prepared by their
+  documented entry point.
 
 The `CalendarScheduler` subsystem is aggregate-first:
 
