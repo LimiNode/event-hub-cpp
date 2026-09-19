@@ -3,11 +3,10 @@
 #define EVENT_HUB_CALENDAR_SCHEDULER_DETAIL_HPP_INCLUDED
 
 /// \file calendar_scheduler/detail.hpp
-/// \brief Internal helpers for CalendarScheduler.
-
-#include "types.hpp"
-
-#include "../task_manager.hpp"
+/// \brief Aggregate-owned internal helpers for CalendarScheduler.
+///
+/// This header is included by `calendar_scheduler.hpp` and is not a consumer
+/// include target.
 
 #include <algorithm>
 #include <atomic>

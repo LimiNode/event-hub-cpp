@@ -4,7 +4,14 @@
 
 /// \file calendar_scheduler.hpp
 /// \brief Optional calendar-time scheduling layer over TaskManager.
+///
+/// This is the supported aggregate entry point for the calendar scheduler
+/// subsystem. The adjacent `calendar_scheduler/types.hpp` and
+/// `calendar_scheduler/detail.hpp` headers are aggregate-owned supporting
+/// headers and do not provide standalone include contracts.
 
+#include "task_manager.hpp"
+#include "calendar_scheduler/types.hpp"
 #include "calendar_scheduler/detail.hpp"
 
 #include <chrono>

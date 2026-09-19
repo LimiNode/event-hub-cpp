@@ -30,10 +30,12 @@ Core files:
 - `include/event_hub/task_manager.hpp` defines the passive task queue.
 - `include/event_hub/calendar_scheduler.hpp` defines the public
   `CalendarScheduler` class.
-- `include/event_hub/calendar_scheduler/types.hpp` holds public calendar DTOs,
-  observer payloads, policies, and options.
-- `include/event_hub/calendar_scheduler/detail.hpp` holds internal next-run
-  calculation helpers and scheduler state.
+- `include/event_hub/calendar_scheduler/types.hpp` holds aggregate-owned public
+  calendar DTOs, observer payloads, policies, and options. It is exposed
+  through `calendar_scheduler.hpp`, not as a standalone include contract.
+- `include/event_hub/calendar_scheduler/detail.hpp` holds aggregate-owned
+  internal next-run calculation helpers and scheduler state. It is never a
+  consumer include target.
 
 Important choices:
 

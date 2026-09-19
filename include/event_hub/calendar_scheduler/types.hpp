@@ -3,7 +3,10 @@
 #define EVENT_HUB_CALENDAR_SCHEDULER_TYPES_HPP_INCLUDED
 
 /// \file calendar_scheduler/types.hpp
-/// \brief Public DTOs and policies for CalendarScheduler.
+/// \brief Aggregate-owned DTOs and policies for CalendarScheduler.
+///
+/// Include `<event_hub/calendar_scheduler.hpp>` instead of this supporting
+/// header directly.
 
 #ifndef EVENT_HUB_CPP_USE_TIME_SHIELD
 #define EVENT_HUB_CPP_USE_TIME_SHIELD 0
@@ -12,8 +15,6 @@
 #if !EVENT_HUB_CPP_USE_TIME_SHIELD
 #error "event_hub/calendar_scheduler.hpp requires EVENT_HUB_CPP_USE_TIME_SHIELD=ON"
 #endif
-
-#include "../task.hpp"
 
 #include <time_shield.hpp>
 
