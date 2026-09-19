@@ -19,6 +19,17 @@
 - Keep public headers dependency-light and standard-library-only.
 - Include what each header uses.
 
+The `CalendarScheduler` subsystem is aggregate-first:
+
+- include `<event_hub/calendar_scheduler.hpp>` as its supported entry point;
+- `calendar_scheduler/types.hpp` is an aggregate-owned DTO and policy header;
+- `calendar_scheduler/detail.hpp` is an aggregate-owned implementation header;
+- the adjacent headers may rely on prerequisites prepared by
+  `calendar_scheduler.hpp` and do not promise standalone inclusion.
+
+Keep cross-directory and shared calendar dependencies in the aggregate entry
+point. Do not add `../` traversal includes to these aggregate-owned headers.
+
 ## Umbrella Header
 
 `include/event_hub.hpp` is the primary umbrella header. Consumers can
