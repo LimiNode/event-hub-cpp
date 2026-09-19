@@ -16,7 +16,9 @@
 - When one header includes another header from the same directory, use the short
   relative path, for example `#include "event_bus.hpp"` instead of
   `#include "event_hub/event_bus.hpp"`.
-- Keep public headers dependency-light and standard-library-only.
+- Keep core public headers dependency-light and standard-library-only. Optional
+  integration entry points may depend on declared external feature
+  dependencies when those dependencies are part of the public API.
 - Include what each standalone header or public entry point uses. Aggregate-
   owned supporting headers may rely on prerequisites prepared by their
   documented entry point.
@@ -29,8 +31,10 @@ The `CalendarScheduler` subsystem is aggregate-first:
 - the adjacent headers may rely on prerequisites prepared by
   `calendar_scheduler.hpp` and do not promise standalone inclusion.
 
-Keep cross-directory and shared calendar dependencies in the aggregate entry
-point. Do not add `../` traversal includes to these aggregate-owned headers.
+Keep cross-directory project dependencies and shared aggregate prerequisites in
+the aggregate entry point. Aggregate-owned headers may include an external
+feature dependency that they directly expose through their declarations. Do
+not add `../` traversal includes to these aggregate-owned headers.
 
 ## Umbrella Header
 
