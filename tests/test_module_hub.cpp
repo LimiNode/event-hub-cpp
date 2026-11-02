@@ -2,9 +2,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -240,6 +244,56 @@ public:
     }
 };
 
+class ObservedNotifier final : public event_hub::INotifier {
+public:
+    using Clock = event_hub::TaskManager::Clock;
+    using TimePoint = Clock::time_point;
+
+    void notify() noexcept override {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            ++m_generation;
+        }
+        m_work_condition.notify_all();
+    }
+
+    std::uint64_t generation() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_generation;
+    }
+
+    void wait(std::uint64_t observed,
+              std::optional<TimePoint> deadline) {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        ++m_wait_count;
+        m_wait_condition.notify_all();
+
+        const auto changed = [this, observed] {
+            return m_generation != observed;
+        };
+        if (deadline) {
+            (void)m_work_condition.wait_until(lock, *deadline, changed);
+        } else {
+            m_work_condition.wait(lock, changed);
+        }
+    }
+
+    bool wait_for_wait_count(std::size_t expected,
+                             std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        return m_wait_condition.wait_for(lock, timeout, [this, expected] {
+            return m_wait_count >= expected;
+        });
+    }
+
+private:
+    mutable std::mutex m_mutex;
+    std::condition_variable m_work_condition;
+    std::condition_variable m_wait_condition;
+    std::uint64_t m_generation = 0;
+    std::size_t m_wait_count = 0;
+};
+
 bool wait_until(std::function<bool()> predicate,
                 std::chrono::milliseconds timeout =
                     std::chrono::seconds(2)) {
@@ -433,6 +487,74 @@ int main() {
     }
 
     {
+        // An external loop must be notified when a newly registered awaiter
+        // introduces a deadline, including when it replaces a later wait.
+        event_hub::ModuleHub hub;
+        event_hub::EventEndpoint endpoint(hub.bus());
+        ObservedNotifier notifier;
+        std::atomic_bool stop{false};
+        std::atomic_bool long_timed_out{false};
+        std::promise<void> short_timed_out;
+        auto short_timed_out_future = short_timed_out.get_future();
+
+        hub.set_notifier(&notifier);
+        hub.initialize();
+
+        std::thread loop([&] {
+            while (!stop.load(std::memory_order_acquire)) {
+                const auto generation = notifier.generation();
+                const auto work_done = hub.process_once();
+                if (work_done != 0U ||
+                    stop.load(std::memory_order_acquire) ||
+                    hub.has_pending()) {
+                    continue;
+                }
+
+                notifier.wait(generation, hub.next_deadline());
+            }
+        });
+
+        EVENT_HUB_TEST_CHECK(notifier.wait_for_wait_count(
+            1, std::chrono::seconds(2)));
+
+        event_hub::AwaitOptions long_options;
+        long_options.timeout = std::chrono::seconds(5);
+        long_options.on_timeout = [&] {
+            long_timed_out.store(true, std::memory_order_release);
+        };
+        auto long_awaiter = endpoint.await_once<Message>(
+            [](const Message&) {}, std::move(long_options));
+
+        EVENT_HUB_TEST_CHECK(notifier.wait_for_wait_count(
+            2, std::chrono::seconds(2)));
+
+        event_hub::AwaitOptions short_options;
+        short_options.timeout = std::chrono::milliseconds(75);
+        short_options.on_timeout = [&] {
+            stop.store(true, std::memory_order_release);
+            short_timed_out.set_value();
+        };
+        auto short_awaiter = endpoint.await_once<Message>(
+            [](const Message&) {}, std::move(short_options));
+
+        require_ready(short_timed_out_future);
+        auto loop_joined = std::async(std::launch::async, [&] {
+            loop.join();
+        });
+        require_ready(loop_joined);
+        loop_joined.get();
+
+        EVENT_HUB_TEST_CHECK(!long_timed_out.load(std::memory_order_acquire));
+        EVENT_HUB_TEST_CHECK(!short_awaiter->is_active());
+        long_awaiter->cancel();
+        EVENT_HUB_TEST_CHECK(!long_awaiter->is_active());
+        EVENT_HUB_TEST_CHECK(!hub.next_deadline());
+
+        hub.shutdown();
+        hub.reset_notifier();
+    }
+
+    {
         event_hub::ModuleHub hub;
         event_hub::EventEndpoint endpoint(hub.bus());
         std::vector<std::string> messages;
@@ -496,6 +618,53 @@ int main() {
 
         hub.join();
         EVENT_HUB_TEST_CHECK(module.is_stopped());
+    }
+
+    {
+        // start() must include an awaiter registered before the managed loop.
+        event_hub::ModuleHub hub;
+        event_hub::EventEndpoint endpoint(hub.bus());
+        std::promise<void> timed_out;
+        auto timed_out_future = timed_out.get_future();
+        event_hub::AwaitOptions options;
+        options.timeout = std::chrono::milliseconds(75);
+        options.on_timeout = [&] {
+            timed_out.set_value();
+            hub.request_stop();
+        };
+        endpoint.await_once<Message>([](const Message&) {}, std::move(options));
+
+        hub.start();
+        require_ready(timed_out_future);
+        auto joined = std::async(std::launch::async, [&] {
+            hub.join();
+        });
+        require_ready(joined);
+        joined.get();
+        EVENT_HUB_TEST_CHECK(hub.stop_requested());
+    }
+
+    {
+        // run() uses the same deadline aggregation as start().
+        event_hub::ModuleHub hub;
+        event_hub::EventEndpoint endpoint(hub.bus());
+        std::promise<void> timed_out;
+        auto timed_out_future = timed_out.get_future();
+        event_hub::AwaitOptions options;
+        options.timeout = std::chrono::milliseconds(75);
+        options.on_timeout = [&] {
+            timed_out.set_value();
+            hub.request_stop();
+        };
+        endpoint.await_once<Message>([](const Message&) {}, std::move(options));
+
+        auto run_future = std::async(std::launch::async, [&] {
+            hub.run();
+        });
+        require_ready(timed_out_future);
+        require_ready(run_future);
+        run_future.get();
+        EVENT_HUB_TEST_CHECK(hub.stop_requested());
     }
 
     {

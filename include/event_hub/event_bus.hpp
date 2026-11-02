@@ -99,12 +99,12 @@ public:
     EventBus(EventBus&&) = delete;
     EventBus& operator=(EventBus&&) = delete;
 
-    /// \brief Set a non-owning notifier called after events are queued.
+    /// \brief Set a non-owning notifier called when queued work may change.
     ///
     /// The caller must keep the notifier alive while producer threads may call
-    /// post(). Producers must be quiescent before reset_notifier() or notifier
-    /// destruction; reset_notifier() does not wait for a producer that already
-    /// loaded the pointer.
+    /// post() or register an awaiter. Producers must be quiescent before
+    /// reset_notifier() or notifier destruction; reset_notifier() does not wait
+    /// for a producer that already loaded the pointer.
     ///
     /// \param notifier Non-owning notifier pointer, or null to disable
     /// notifications.
@@ -613,13 +613,19 @@ public:
     /// \param awaiter Awaiter implementation to poll at emit_direct() and
     /// process() points accepted by its delivery policy. Null pointers are
     /// ignored.
+    /// \note Registration notifies the configured loop after releasing the
+    /// awaiter mutex so it can recompute an earlier or newly added deadline.
     void register_awaiter(const std::shared_ptr<IAwaiterEx>& awaiter) {
         if (!awaiter) {
             return;
         }
 
-        std::lock_guard<std::mutex> lock(m_awaiters_mutex);
-        m_awaiters.emplace_back(awaiter);
+        {
+            std::lock_guard<std::mutex> lock(m_awaiters_mutex);
+            m_awaiters.emplace_back(awaiter);
+        }
+
+        notify_work_available();
     }
 
 private:
