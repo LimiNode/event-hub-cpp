@@ -149,6 +149,10 @@ public:
     }
 
     /// \brief Request all active loops and private workers to stop.
+    ///
+    /// This wakes both the internal active-loop notifier and any configured
+    /// external notifier. It does not wait for callbacks already in flight or
+    /// imply callback quiescence.
     void request_stop() noexcept {
         m_stop_requested.store(true, std::memory_order_release);
 
@@ -241,8 +245,14 @@ public:
     }
 
     /// \brief Return the earliest future hub deadline, if any.
+    ///
+    /// Queued EventBus awaiter deadlines are aggregated with inline module
+    /// task deadlines and module deadline hints. Direct-only awaiters are not
+    /// driven by the hub's queued process() loop.
     std::optional<TimePoint> next_deadline() {
         std::optional<TimePoint> best;
+
+        update_best_deadline(best, m_bus.next_awaiter_deadline());
 
         for (auto& module : m_modules) {
             if (!module->is_initialized() || module->is_stopping() ||
